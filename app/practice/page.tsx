@@ -276,7 +276,7 @@ export default function PracticePage() {
                       <span className="spin" /> &nbsp;Generating…
                     </>
                   ) : (
-                    "Generate comparison"
+                    "Generate Comparison"
                   )}
                 </button>
               )}
@@ -315,7 +315,7 @@ export default function PracticePage() {
             <button className="primary" onClick={() => router.push("/archive")}>
               View archive
             </button>
-            <button onClick={() => router.push("/")}>New case</button>
+            <button onClick={() => router.push("/")}>New Case</button>
             <div className="spacer" />
             <button onClick={() => window.print()}>Export to PDF</button>
           </div>

@@ -117,6 +117,7 @@ export default function LibraryPage() {
           <label className="field">
             <span>Industry</span>
             <select value={f.industry} onChange={(e) => setF({ ...f, industry: e.target.value })}>
+              <option value="Random">Random</option>
               {INDUSTRIES.map((i) => (
                 <option key={i} value={i}>
                   {i}
@@ -174,7 +175,7 @@ export default function LibraryPage() {
                 <span className="spin" /> &nbsp;Generating…
               </>
             ) : (
-              "Generate & start"
+              "Generate & Start"
             )}
           </button>
           <button onClick={randomize} disabled={busy}>

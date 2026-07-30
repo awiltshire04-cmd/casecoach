@@ -3,6 +3,7 @@
 
 export interface LboScenario {
   company: string;
+  industry?: string;
   entry_ebitda: number;        // $M
   entry_multiple: number;      // x EBITDA
   leverage_turns: number;      // x EBITDA of debt at entry
@@ -35,7 +36,7 @@ function round(n: number, dp = 1) {
   return Math.round(n * f) / f;
 }
 
-export function generateScenario(difficulty: "easy" | "medium" | "hard" = "medium"): LboScenario {
+export function generateScenario(difficulty: "easy" | "medium" | "hard" = "medium", industry?: string): LboScenario {
   const rnd = (min: number, max: number, step = 1) => {
     const steps = Math.floor((max - min) / step);
     return min + step * Math.floor(Math.random() * (steps + 1));
@@ -54,6 +55,7 @@ export function generateScenario(difficulty: "easy" | "medium" | "hard" = "mediu
 
   return {
     company: COMPANIES[Math.floor(Math.random() * COMPANIES.length)],
+    industry,
     entry_ebitda: ebitda,
     entry_multiple: round(entryMult, 1),
     leverage_turns: round(leverage, 1),

@@ -12,7 +12,7 @@ export async function POST(req: Request) {
     const supa = serviceClient();
 
     if (body.action === "new") {
-      const scenario = generateScenario(body.difficulty ?? "medium");
+      const scenario = generateScenario(body.difficulty ?? "medium", body.industry || undefined);
       const correct = computeAnswers(scenario);
       const { data, error } = await supa
         .from("lbo_drills")

@@ -1,9 +1,11 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { browserClient } from "@/lib/supabase";
 import { scoreClass } from "@/components/Pieces";
 import { CASE_TYPES } from "@/lib/types";
+import { TOGGLES } from "@/lib/modeltest/types";
 
 interface HistRow {
   id: string;
@@ -26,8 +28,25 @@ interface Insight {
 
 type SliceKey = "all" | "type" | "industry" | "difficulty";
 
+interface MtRow {
+  id: string;
+  opened_at: string;
+  status: string;
+  time_taken_sec: number | null;
+  total: number | null;
+  company: string;
+  concepts: string[];
+  difficulty: string;
+  presentation: string;
+  industry: string;
+}
+
 export default function ArchivePage() {
+  const router = useRouter();
   const [rows, setRows] = useState<HistRow[]>([]);
+  const [mtRows, setMtRows] = useState<MtRow[]>([]);
+  const [mtConceptFilter, setMtConceptFilter] = useState<string[]>([]);
+  const [mtSortDir, setMtSortDir] = useState<1 | -1>(-1);
   const [loading, setLoading] = useState(true);
   const [slice, setSlice] = useState<SliceKey>("all");
   const [sliceVal, setSliceVal] = useState<string>("");
@@ -47,6 +66,30 @@ export default function ArchivePage() {
           .select("*")
           .order("created_at", { ascending: true });
         setRows((data as HistRow[]) ?? []);
+        try {
+          const { data: mts } = await supa
+            .from("model_test_attempts")
+            .select("id, opened_at, status, time_taken_sec, grade, model_tests(params, case_structured)")
+            .order("opened_at", { ascending: false });
+          type Raw = { id: string; opened_at: string; status: string; time_taken_sec: number | null;
+            grade: { total?: number } | null;
+            model_tests: { params: { concepts?: string[]; difficulty?: string; presentation?: string; industry?: string } | null;
+                           case_structured: { company?: string } | null } | null };
+          setMtRows(((mts ?? []) as unknown as Raw[]).map((m) => ({
+            id: m.id,
+            opened_at: m.opened_at,
+            status: m.status,
+            time_taken_sec: m.time_taken_sec,
+            total: m.grade?.total ?? null,
+            company: m.model_tests?.case_structured?.company ?? "—",
+            concepts: m.model_tests?.params?.concepts ?? [],
+            difficulty: m.model_tests?.params?.difficulty ?? "",
+            presentation: m.model_tests?.params?.presentation ?? "",
+            industry: m.model_tests?.params?.industry ?? "",
+          })));
+        } catch {
+          /* model test tables may not exist on older installs */
+        }
         try {
           const { data: traps } = await supa
             .from("missed_trap_frequency")
@@ -263,7 +306,7 @@ export default function ArchivePage() {
                   const mins = Math.floor(r.time_taken_sec / 60);
                   const secs = r.time_taken_sec % 60;
                   return (
-                    <tr key={r.id}>
+                    <tr key={r.id} className="clickable" onClick={() => router.push(`/archive/case/${r.id}`)}>
                       <td className="fig">{new Date(r.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</td>
                       <td>{r.title}</td>
                       <td>{typeLabel(r.type)}</td>
@@ -283,6 +326,75 @@ export default function ArchivePage() {
           </div>
         </div>
       )}
+
+      {/* ---- Model Tests ---- */}
+      <div className="stack" style={{ marginTop: "2rem" }}>
+        <div>
+          <h2>Model Tests</h2>
+          <p className="sub">Every generated modelling test. Click a row to reopen it read-only, re-download the case PDF, or pull your submitted workbook.</p>
+        </div>
+        {mtRows.length === 0 ? (
+          <div className="empty">No modelling tests yet — generate one from the Model Test tab.</div>
+        ) : (
+          <>
+            <div className="row wrap no-print">
+              {Array.from(new Set(mtRows.flatMap((m) => m.concepts))).sort().map((k) => {
+                const on = mtConceptFilter.includes(k);
+                return (
+                  <button
+                    key={k}
+                    className={`chip${on ? " blue" : ""}`}
+                    style={{ cursor: "pointer" }}
+                    onClick={() => setMtConceptFilter((f) => (on ? f.filter((x) => x !== k) : [...f, k]))}
+                  >
+                    {TOGGLES.find((t) => t.key === k)?.label ?? k}
+                  </button>
+                );
+              })}
+              {mtConceptFilter.length > 0 && (
+                <button className="ghost" onClick={() => setMtConceptFilter([])}>Clear</button>
+              )}
+            </div>
+            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th onClick={() => setMtSortDir((d) => (d === 1 ? -1 : 1))}>Date {mtSortDir === -1 ? "↓" : "↑"}</th>
+                    <th>Company</th>
+                    <th>Industry</th>
+                    <th>Difficulty</th>
+                    <th>Format</th>
+                    <th>Concepts</th>
+                    <th>Time</th>
+                    <th>Score</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mtRows
+                    .filter((m) => mtConceptFilter.length === 0 || mtConceptFilter.every((k) => m.concepts.includes(k)))
+                    .sort((a, b) => mtSortDir * (new Date(a.opened_at).getTime() - new Date(b.opened_at).getTime()))
+                    .map((m) => (
+                      <tr key={m.id} className="clickable" onClick={() => router.push(`/archive/mt/${m.id}`)}>
+                        <td className="fig">{new Date(m.opened_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</td>
+                        <td>{m.company}</td>
+                        <td>{m.industry}</td>
+                        <td>{m.difficulty}</td>
+                        <td>{m.presentation === "cim" ? "CIM" : "Direct"}</td>
+                        <td>
+                          <span className="sub">{m.concepts.length} selected</span>
+                        </td>
+                        <td className="fig">{m.time_taken_sec != null ? `${Math.floor(m.time_taken_sec / 60)}m` : "—"}</td>
+                        <td className="fig">
+                          {m.total != null ? <span className={`scorepill ${scoreClass(m.total)}`}>{m.total}</span> : <span className="sub">{m.status}</span>}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
     </>
   );
 }

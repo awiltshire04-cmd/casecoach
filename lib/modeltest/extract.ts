@@ -169,6 +169,12 @@ const CONCEPT_KEYWORDS: Record<string, RegExp> = {
   oid: /oid|discount/i,
   closing_bs: /goodwill|intangible|step[\s-]?up|dtl|deferred/i,
   driver_forecast: /units|price|growth|segment/i,
+  qoe: /adjust|add[\s-]?back|one[\s-]?time|non[\s-]?recurring|normaliz|reported/i,
+  capex_split: /maintenance|growth\s*capex|maint/i,
+  mezz_warrants: /mezz|warrant/i,
+  ddtl: /delayed|ddtl|ticking|undrawn|commitment/i,
+  divestiture: /divest|disposal|sale of|carve/i,
+  nwc_peg: /peg|true[\s-]?up|target\s*(net\s*)?working/i,
 };
 
 export function formulaSample(pw: ParsedWorkbook, concepts: string[], cap = 160) {

@@ -42,15 +42,19 @@ Schema (TypeScript-ish; every field required unless marked optional; omit option
  "stepup": {"intangible_pct_of_stepup":dec,"intangible_amort_years":n,"dtl_matches":bool},
  "entry": {"ltm_multiple":n,"exit_multiple":n,"min_cash":n,"transaction_expenses":n,"tax_rate":dec,"interest_on_cash":dec,"fin_fee_amort_years":n,"interest_basis":"average"|"beginning"},
  "libor_curve": [dec × ${p.hold_years}],
- "tranches": [{"name":s,"kind":"revolver"|"term"|"notes"|"pik","size_turns":n(omit for revolver),"commitment_mm":n(revolver only),"rate_mode":"floating"|"fixed","spread":dec?,"floor":dec?,"fixed_rate":dec?,"fin_fee_pct":dec,"is_pik":bool,"sweep_priority":n(0=never swept; PIK must be 0)}],
+ "tranches": [{"name":s,"kind":"revolver"|"term"|"notes"|"pik"|"mezz"|"ddtl","size_turns":n(omit for revolver/ddtl),"commitment_mm":n(revolver and ddtl only),"rate_mode":"floating"|"fixed","spread":dec?,"floor":dec?,"fixed_rate":dec?,"fin_fee_pct":dec,"is_pik":bool,"sweep_priority":n(0=never swept; PIK and mezz must be 0),"pik_rate":dec(mezz only: PIK strip on top of cash rate),"warrants_pct":dec(mezz_warrants only: 0.02-0.08 of common equity),"draw_year":n(ddtl only),"ticking_fee_pct":dec(ddtl only)}],
  "recap": {"year":n,"target_total_turns":n,"spread":dec,"floor":dec,"sweep_priority":1} (only if recap selected),
  "addon": {"year":n,"multiple_on_prior_ebitda":n,"customers0_k":n,"customers_added_k":n,"rev_per_customer_k":n,"gm_pct":dec,"sga_pct":dec,"rd_pct":dec} (only if addon selected),
  "convertible": {"amount":n,"pik_rate":dec,"conversion_price":n,"entry_share_price":n} (only if convertible_preferred selected),
  "mgmt_options": {"options_mm":n,"strike":n} (only if mgmt_options selected; strike should equal convertible entry_share_price when both present),
+ "qoe": {"adjustments":[{"label":s,"amount_mm":n}]} (only if qoe selected; 1-3 items INFLATING reported EBITDA — one-time gains, owner add-backs booked as recurring, run-rate credits — total 5-20% of EBITDA; the driver-implied EBITDA is the TRUE adjusted figure),
+ "nwc_peg": {"peg_mm":n,"delivered_mm":n} (only if nwc_peg selected; delivered within ±15% of peg),
+ "divestiture": {"year":n,"segment_name":s(must match a segment name),"multiple_on_prior_segment_ebitda":n} (only if divestiture selected; REQUIRES 2+ segments),
  "quirks": [{"id":"q1","title":short,"mechanic":one-sentence description of the non-standard mechanic,"param_refs":[field paths]}],
  "conventions": []
 }
 
+If capex_split selected: costs uses "maint_capex_pct_rev" and "growth_capex_pct_rev" instead of a single capex figure. If ddtl selected: include one ddtl tranche (undrawn at close). If mezz_warrants selected: include one mezz tranche with pik_rate and warrants_pct. If divestiture selected: generate at least two segments.
 Constraints: total funded leverage 4.0-6.5 turns across tranches; entry multiple 7-13x; exit within ±1.5x of entry; growth rates 2-8%; the deal should produce a plausible PE outcome (not guaranteed home run). quirks: one entry per selected concept that creates a non-standard mechanic (e.g. PIK seniority, OID accretion, recap timing, conversion election) — these drive the case's difficulty. Leave "conventions" as an empty array (filled downstream).
 
 Return the JSON object only.`;
@@ -72,6 +76,12 @@ export function buildConventions(c: CaseStructured): string[] {
   if (c.recap) conv.push("Recap debt is raised at the beginning of the stated year and the full proceeds are immediately paid as a dividend; recap debt can be swept in the same year; no financing fees on recap debt");
   if (c.addon) conv.push("The add-on closes at the very beginning of the stated year at the stated multiple of its prior-year EBITDA, funded by revolver draw then excess cash; it contributes no D&A, capex, or NWC");
   if (c.convertible) conv.push("The convertible preferred PIKs annually and elects the greater of accrued value or as-converted value at exit; options are net-settled (treasury method)");
+  if (c.costs.maint_capex_pct_rev != null) conv.push("Capex is split maintenance vs growth; both are cash capex and add to PP&E");
+  if (c.qoe) conv.push("The purchase multiple applies to ADJUSTED LTM EBITDA — normalize the reported figure for the disclosed one-time / non-recurring items before sizing the deal");
+  if (c.nwc_peg) conv.push("Purchase price adjusts dollar-for-dollar for delivered net working capital vs the peg at close (delivered − peg added to the purchase of equity)");
+  if (c.tranches.some((t) => t.kind === "ddtl")) conv.push("The delayed-draw term loan is undrawn at close; a ticking fee on the undrawn commitment runs through interest expense; the facility draws in full at the beginning of its draw year" + (c.addon ? " to fund the add-on" : " to fund a capacity expansion (capex)"));
+  if (c.tranches.some((t) => t.kind === "mezz")) conv.push("Mezzanine pays a cash coupon plus a PIK strip accruing to principal; its warrants take the stated percentage of common equity value (after any preferred) at exit; mezz is never cash-swept");
+  if (c.divestiture) conv.push("The divestiture closes at the beginning of the stated year at the stated multiple of the segment's prior-year standalone EBITDA (corporate costs allocated on segment revenue); assume no tax leakage; proceeds are retained in the business");
   return conv;
 }
 
@@ -89,6 +99,7 @@ ${mode === "direct"
       ? `Produce 3-5 pages: (1) Company & transaction assumptions, (2) Driver assumptions per segment, (3) Debt assumptions, (4) balance sheet / working capital assumptions${c.addon || c.convertible ? ", (5) structural assumptions (add-on / convertible / options)" : ""}. Bullet style, precise.`
       : `Produce 6-8 CIM pages: Executive Summary, Business Overview (segments with the driver numbers woven into prose), Management Team (invented bios), Market & Competition, Historical & Projected Financial Highlights (the operating assumptions embedded), Transaction Overview (debt terms, fees, structure buried in prose and a footnoted table)${c.addon ? ", Acquisition Pipeline (the add-on)" : ""}${c.convertible ? ", Proposed Investment Structure (the convertible terms)" : ""}. The candidate must hunt for the numbers.`}
 
+${c.qoe ? `QoE presentation (IMPORTANT): present REPORTED LTM EBITDA of ${(sol.entry.entry_ebitda + c.qoe.adjustments.reduce((a, x) => a + x.amount_mm, 0)).toFixed(1)} in the financial sections. The adjustment items (${c.qoe.adjustments.map((a) => `${a.label}: ${a.amount_mm}mm`).join("; ")}) must appear scattered in the document — footnotes, MD&A asides, the accountant's note — never as a clean adjustments table. Do NOT present the adjusted figure anywhere.` : ""}
 The modelling task: acquire the company at close, hold ${c.hold_years} years, answer IRR and MoM${c.convertible ? " for the preferred investment (and be ready to discuss the conversion election)" : ""}.
 
 Return JSON exactly: {"pages":[{"title":string,"body":string(markdown)}]}`;

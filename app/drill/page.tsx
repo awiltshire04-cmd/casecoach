@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { fmtTime } from "@/components/Pieces";
 import { CHECKED_FIELDS, type LboScenario, type LboAnswers } from "@/lib/lbo";
+import { INDUSTRIES } from "@/lib/types";
 
 type Phase = "idle" | "solving" | "done";
 type Difficulty = "easy" | "medium" | "hard";
@@ -13,6 +14,7 @@ export default function DrillPage() {
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
   const [drillId, setDrillId] = useState<string | null>(null);
   const [scenario, setScenario] = useState<LboScenario | null>(null);
+  const [industry, setIndustry] = useState<string>("Random");
   const [remaining, setRemaining] = useState(DRILL_TIME);
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [result, setResult] = useState<{
@@ -42,7 +44,7 @@ export default function DrillPage() {
       const res = await fetch("/api/lbo-drill", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "new", difficulty }),
+        body: JSON.stringify({ action: "new", difficulty, industry: industry === "Random" ? INDUSTRIES[Math.floor(Math.random() * INDUSTRIES.length)] : industry }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed");
@@ -95,7 +97,7 @@ export default function DrillPage() {
     <>
       <div className="page-head">
         <div className="eyebrow">03 · Paper LBO</div>
-        <h1>Quant drill</h1>
+        <h1>Quant Drill</h1>
         <p className="sub">Fast reps on the math that trips people up live. Final answer plus key intermediates, checked to a tolerance.</p>
       </div>
 
@@ -104,14 +106,21 @@ export default function DrillPage() {
           <label className="field" style={{ maxWidth: 160 }}>
             <span>Difficulty</span>
             <select value={difficulty} onChange={(e) => setDifficulty(e.target.value as Difficulty)}>
-              <option value="easy">easy (round numbers)</option>
-              <option value="medium">medium</option>
-              <option value="hard">hard (messy)</option>
+              <option value="easy">Easy (Round Numbers)</option>
+              <option value="medium">Medium</option>
+              <option value="hard">Hard (Messy)</option>
+            </select>
+          </label>
+          <label className="field" style={{ maxWidth: 200 }}>
+            <span>Industry</span>
+            <select value={industry} onChange={(e) => setIndustry(e.target.value)}>
+              <option value="Random">Random</option>
+              {INDUSTRIES.map((i) => <option key={i}>{i}</option>)}
             </select>
           </label>
           <div className="spacer" />
           <button className="primary" onClick={newDrill} disabled={busy}>
-            {busy ? <><span className="spin" /> &nbsp;Loading…</> : "Start drill"}
+            {busy ? <><span className="spin" /> &nbsp;Loading…</> : "Start Drill"}
           </button>
         </div>
       )}
@@ -120,7 +129,8 @@ export default function DrillPage() {
         <div className="split-3">
           {/* scenario */}
           <div className="card">
-            <h3 style={{ marginBottom: "0.6rem" }}>{scenario.company}</h3>
+            <h3 style={{ marginBottom: "0.2rem" }}>{scenario.company}</h3>
+            {scenario.industry && <div className="sub" style={{ marginBottom: "0.5rem" }}>{scenario.industry}</div>}
             <div className="scenario-line"><span className="k">Entry EBITDA</span><span className="v">${scenario.entry_ebitda}M</span></div>
             <div className="scenario-line"><span className="k">Entry multiple</span><span className="v">{scenario.entry_multiple}x</span></div>
             <div className="scenario-line"><span className="k">Leverage at entry</span><span className="v">{scenario.leverage_turns}x EBITDA</span></div>
@@ -185,7 +195,7 @@ export default function DrillPage() {
               )}
               {phase === "done" && (
                 <>
-                  <button className="primary" onClick={newDrill} disabled={busy}>Next drill</button>
+                  <button className="primary" onClick={newDrill} disabled={busy}>Next Drill</button>
                   <button onClick={() => setPhase("idle")}>Done</button>
                 </>
               )}

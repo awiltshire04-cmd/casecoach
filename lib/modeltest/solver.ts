@@ -25,15 +25,24 @@ function segmentYear(s: Segment, t: number): { rev: number; gp: number; segCost:
   return { rev, gp: rev * s.gross_margin_pct, segCost: 0 };
 }
 
-function baseYear(c: CaseStructured, t: number) {
+function baseYear(c: CaseStructured, t: number, excluded?: Set<string>) {
   let rev = 0, gp = 0, segCost = 0;
   for (const s of c.segments) {
+    if (excluded?.has(s.name)) continue;
     const y = segmentYear(s, t);
     rev += y.rev; gp += y.gp; segCost += y.segCost;
   }
   const ebitda = gp - segCost - c.costs.sga_pct * rev - c.costs.rd_pct * rev;
   const cogs = rev - gp;
   return { rev, cogs, ebitda };
+}
+
+// A single segment's standalone EBITDA with corporate SG&A/R&D allocated on its own revenue.
+function segmentEbitda(c: CaseStructured, name: string, t: number): number {
+  const seg = c.segments.find((x) => x.name === name);
+  if (!seg) return 0;
+  const y = segmentYear(seg, t);
+  return y.gp - y.segCost - (c.costs.sga_pct + c.costs.rd_pct) * y.rev;
 }
 
 function addonYear(c: CaseStructured, t: number): { rev: number; ebitda: number } {
@@ -79,6 +88,7 @@ interface ExitCalc {
   exitEbitda: number; exitEV: number; netDebt: number; equityValue: number;
   preferredValue: number; preferredTakes?: "accrued" | "converted";
   accrued?: number; asConverted?: number; optionsValue: number; commonValue: number; sharePrice?: number;
+  warrantsValue?: number;
 }
 
 export function solve(c: CaseStructured): ReferenceSolution {
@@ -92,16 +102,18 @@ export function solve(c: CaseStructured): ReferenceSolution {
 
   const tranches: TrancheState[] = c.tranches
     .filter((t) => t.kind !== "revolver")
-    .map((t) => ({ def: t, balance: (t.size_turns ?? 0) * entryEbitda }));
+    .map((t) => ({ def: t, balance: t.kind === "ddtl" ? 0 : (t.size_turns ?? 0) * entryEbitda }));
   const revolverDef = c.tranches.find((t) => t.kind === "revolver");
   const revolver: TrancheState | null = revolverDef ? { def: revolverDef, balance: 0 } : null;
   const totalDebtFace = tranches.reduce((a, t) => a + t.balance, 0);
-  const finFees = tranches.reduce((a, t) => a + t.balance * t.def.fin_fee_pct, 0);
+  const finFees = tranches.reduce(
+    (a, t) => a + (t.def.kind === "ddtl" ? (t.def.commitment_mm ?? 0) : t.balance) * t.def.fin_fee_pct, 0);
   const oidDiscount = tranches.reduce((a, t) => a + t.balance * (t.def.oid_pct ?? 0), 0);
 
   const excessCash = Math.max(0, c.bs0.cash - c.entry.min_cash);
+  const pegAdj = c.nwc_peg ? c.nwc_peg.delivered_mm - c.nwc_peg.peg_mm : 0;
   const uses: Record<string, number> = {
-    "Purchase of equity": equityPurchase,
+    "Purchase of equity": equityPurchase + pegAdj,
     "Refinance existing debt": c.bs0.existing_debt,
     "Transaction expenses": c.entry.transaction_expenses,
     "Financing fees": finFees,
@@ -118,7 +130,7 @@ export function solve(c: CaseStructured): ReferenceSolution {
   if (convertibleAmt > 0) sources["Convertible preferred (us)"] = convertibleAmt;
   sources[convertibleAmt > 0 ? "Common equity (co-investor)" : "Sponsor equity"] = otherCommon;
 
-  const stepUp = Math.max(0, equityPurchase - c.bs0.shareholder_equity);
+  const stepUp = Math.max(0, equityPurchase + pegAdj - c.bs0.shareholder_equity);
   const intangibles0 = stepUp * c.stepup.intangible_pct_of_stepup;
   const dtl0 = c.stepup.dtl_matches ? intangibles0 : 0;
   const nwc0 = nwcAt(c, y0.rev, y0.cogs);
@@ -137,16 +149,27 @@ export function solve(c: CaseStructured): ReferenceSolution {
   let intang = intangibles0, dtl = dtl0, finFeesNet = finFees, oidNet = oidDiscount;
   let equityTotal = equity0;
   let prevNwcNet = nwc0.assets - nwc0.liabs;
+  const excludedSegs = new Set<string>();
   const dividends: number[] = [];
   const years: YearRow[] = [];
 
   for (let t = 1; t <= N; t++) {
-    const base = baseYear(c, t);
+    // Divestiture happens at the very beginning of the year — the segment leaves
+    // the P&L for year t itself; proceeds price off its prior-year standalone EBITDA.
+    let divestProceeds = 0;
+    if (c.divestiture && t === c.divestiture.year && !excludedSegs.has(c.divestiture.segment_name)) {
+      divestProceeds = segmentEbitda(c, c.divestiture.segment_name, t - 1) * c.divestiture.multiple_on_prior_segment_ebitda;
+      excludedSegs.add(c.divestiture.segment_name);
+    }
+    const base = baseYear(c, t, excludedSegs);
     const add = addonYear(c, t);
     const revenue = base.rev + add.rev;
     const ebitda = base.ebitda + add.ebitda;
     const da = c.costs.da_pct_rev * base.rev;
-    const capex = c.costs.capex_pct_rev * base.rev;
+    const capexPct = c.costs.maint_capex_pct_rev != null && c.costs.growth_capex_pct_rev != null
+      ? c.costs.maint_capex_pct_rev + c.costs.growth_capex_pct_rev
+      : c.costs.capex_pct_rev;
+    const capex = capexPct * base.rev;
     const nwcNow = nwcAt(c, base.rev, base.cogs);
     const deltaNwc = c.nwc.mode === "days"
       ? (nwcNow.assets - nwcNow.liabs) - prevNwcNet
@@ -160,7 +183,7 @@ export function solve(c: CaseStructured): ReferenceSolution {
     let dividend = 0;
     let recapProceeds = 0;
     if (c.recap && t === c.recap.year) {
-      const prior = baseYear(c, t - 1).ebitda + addonYear(c, t - 1).ebitda;
+      const prior = baseYear(c, t - 1, excludedSegs).ebitda + addonYear(c, t - 1).ebitda;
       const target = c.recap.target_total_turns * prior;
       const current = tranches.reduce((a, x) => a + x.balance, 0) + (revolver?.balance ?? 0);
       const raise = Math.max(0, target - current);
@@ -175,8 +198,21 @@ export function solve(c: CaseStructured): ReferenceSolution {
       recapProceeds = raise;
       dividend = raise;
     }
+    // DDTL draw: at the beginning of its draw year the full commitment funds either
+    // the add-on (if it closes the same year) or a one-time capacity expansion (PPE).
+    let ddtlProceeds = 0, ddtlExpansionCapex = 0;
+    for (const tr of tranches) {
+      if (tr.def.kind === "ddtl" && t === (tr.def.draw_year ?? -1) && tr.balance === 0) {
+        const draw = tr.def.commitment_mm ?? 0;
+        tr.balance = draw;
+        ddtlProceeds = draw;
+        if (!(c.addon && t === c.addon.year)) ddtlExpansionCapex = draw;
+      }
+    }
+    if (ddtlExpansionCapex > 0) { ppe += ddtlExpansionCapex; }
     let addonDraw = 0;
     if (c.addon && t === c.addon.year) {
+      if (ddtlProceeds > 0 && ddtlExpansionCapex === 0) cash += ddtlProceeds; // DDTL funds the add-on
       const fromCash = Math.min(Math.max(0, cash - c.entry.min_cash), addonPrice);
       addonDraw = addonPrice - fromCash;
       cash -= fromCash;
@@ -203,6 +239,13 @@ export function solve(c: CaseStructured): ReferenceSolution {
         const amt = basis(begin[i], end[i]) * rateOf(tr.def);
         ie += amt;
         if (tr.def.is_pik) pikAdded[i] = amt;
+        else if (tr.def.pik_rate) {
+          const pik = basis(begin[i], end[i]) * tr.def.pik_rate; // mezz PIK strip on top of cash pay
+          ie += pik; pikAdded[i] = pik;
+        }
+        if (tr.def.kind === "ddtl" && begin[i] === 0 && end[i] === 0) {
+          ie += (tr.def.ticking_fee_pct ?? 0) * (tr.def.commitment_mm ?? 0); // undrawn ticking fee (cash)
+        }
       });
       if (revolver) ie += basis(revolverBegin, revolverEnd) * rateOf(revolver.def);
       if (oidNet > 0) ie += oidAmortYr;
@@ -216,7 +259,8 @@ export function solve(c: CaseStructured): ReferenceSolution {
       const oa = oidNet > 0 ? oidAmortYr : 0;
       fcf = netIncome + da + ia + fa + oa + totalPik - capex - deltaNwc;
 
-      let avail = cash + fcf - c.entry.min_cash + recapProceeds - dividend;
+      let avail = cash + fcf - c.entry.min_cash + recapProceeds - dividend + divestProceeds;
+      // (DDTL proceeds either bought PPE or funded the add-on at the top of the year — never idle cash)
       let rEnd = revolverBegin;
       if (avail > 0 && rEnd > 0) { const pay = Math.min(avail, rEnd); rEnd -= pay; avail -= pay; }
       const e = begin.map((b, i) => b + pikAdded[i]);
@@ -247,7 +291,7 @@ export function solve(c: CaseStructured): ReferenceSolution {
     if (finFeesNet > 0) finFeesNet = Math.max(0, finFeesNet - finFeeAmortYr);
     if (oidNet > 0) oidNet = Math.max(0, oidNet - oidAmortYr);
     ppe = ppe + capex - da;
-    equityTotal = equityTotal + netIncome - dividend;
+    equityTotal = equityTotal + netIncome - dividend + divestProceeds;
     cash = cashEnd;
     prevNwcNet = prevNwcNet + deltaNwc; // cumulative net NWC position (both modes)
     dividends.push(dividend);
@@ -274,6 +318,7 @@ export function solve(c: CaseStructured): ReferenceSolution {
         ...(revolver ? [["Revolver", r1(revolver.balance)]] : []),
       ]) as Record<string, number>,
       revolver_draw: r1(addonDraw), cash: r1(cash), dividend: r1(dividend),
+      divestiture_proceeds: r1(divestProceeds),
       balance_check: r2(balanceCheck),
     });
 
@@ -295,6 +340,7 @@ export function solve(c: CaseStructured): ReferenceSolution {
     let commonValue = equityValue, optionsValue = 0, sharePrice: number | undefined;
     let accrued: number | undefined, asConverted: number | undefined;
 
+    const warrantsPct = c.tranches.reduce((a, tr) => a + (tr.warrants_pct ?? 0), 0);
     const opts = c.mgmt_options;
     const conv = c.convertible;
     const treasury = (E: number, sh: number) => {
@@ -329,7 +375,12 @@ export function solve(c: CaseStructured): ReferenceSolution {
       commonValue = equityValue - optionsValue;
     }
 
-    return { exitEbitda, exitEV, netDebt, equityValue, preferredValue, preferredTakes, accrued, asConverted, optionsValue, commonValue, sharePrice };
+    let warrantsValue = 0;
+    if (warrantsPct > 0) {
+      warrantsValue = warrantsPct * Math.max(0, equityValue - preferredValue);
+      commonValue = Math.max(0, commonValue - warrantsValue);
+    }
+    return { exitEbitda, exitEV, netDebt, equityValue, preferredValue, preferredTakes, accrued, asConverted, optionsValue, commonValue, sharePrice, warrantsValue };
   };
 
   const sponsorReturns = (k: number, ex: ExitCalc) => {
@@ -386,6 +437,14 @@ export function solve(c: CaseStructured): ReferenceSolution {
     money("Year 1 Revenue", years[0].revenue),
   ];
   if (c.convertible) checkpoints.push(money("Preferred Accrued Value at Exit", finalExit.accrued ?? 0));
+  if (c.qoe) checkpoints.push(money("Adjusted LTM EBITDA", entryEbitda));
+  if (c.nwc_peg) checkpoints.push(money("NWC True-Up Adjustment", pegAdj, 0.01, 0.5));
+  if (c.divestiture) {
+    const dy = years.find((y) => y.divestiture_proceeds > 0);
+    checkpoints.push(money("Divestiture Proceeds", dy?.divestiture_proceeds ?? 0));
+  }
+  if ((c.tranches ?? []).some((tr) => (tr.warrants_pct ?? 0) > 0))
+    checkpoints.push(money("Warrant Value at Exit", finalExit.warrantsValue ?? 0, 0.01, 0.5));
 
   return {
     entry: {
@@ -486,5 +545,49 @@ export function validateAndClamp(c: CaseStructured): CaseStructured {
     c.mgmt_options.strike = clamp(c.mgmt_options.strike || 12, 1, 50);
   }
   if (!c.bs0.shareholder_equity || c.bs0.shareholder_equity <= 0) c.bs0.shareholder_equity = Math.max(200, c.bs0.ppe * 0.5);
+
+  // ---- Phase-B-rollout concepts ----
+  if (c.costs.maint_capex_pct_rev != null || c.costs.growth_capex_pct_rev != null) {
+    c.costs.maint_capex_pct_rev = clamp(c.costs.maint_capex_pct_rev ?? 0.015, 0.005, 0.05);
+    c.costs.growth_capex_pct_rev = clamp(c.costs.growth_capex_pct_rev ?? 0.01, 0, 0.05);
+    c.costs.capex_pct_rev = c.costs.maint_capex_pct_rev + c.costs.growth_capex_pct_rev;
+  }
+  if (c.qoe) {
+    c.qoe.adjustments = (c.qoe.adjustments ?? []).slice(0, 4).map((a) => ({
+      label: a.label || "One-time item",
+      amount_mm: clamp(a.amount_mm, -150, 150),
+    }));
+    if (!c.qoe.adjustments.length) delete c.qoe;
+  }
+  if (c.nwc_peg) {
+    c.nwc_peg.peg_mm = clamp(c.nwc_peg.peg_mm, 10, 2000);
+    // delivered within ±15% of peg keeps the true-up meaningful but not deal-breaking
+    const lo = c.nwc_peg.peg_mm * 0.85, hi = c.nwc_peg.peg_mm * 1.15;
+    c.nwc_peg.delivered_mm = clamp(c.nwc_peg.delivered_mm, lo, hi);
+  }
+  if (c.divestiture) {
+    if (c.segments.length < 2) throw new Error("Divestiture requires at least two segments");
+    if (!c.segments.some((s) => s.name === c.divestiture!.segment_name)) {
+      c.divestiture.segment_name = c.segments[c.segments.length - 1].name;
+    }
+    c.divestiture.year = Math.round(clamp(c.divestiture.year, 2, Math.max(2, c.hold_years - 1)));
+    c.divestiture.multiple_on_prior_segment_ebitda = clamp(c.divestiture.multiple_on_prior_segment_ebitda, 4, 12);
+  }
+  for (const t of c.tranches) {
+    if (t.kind === "mezz") {
+      t.pik_rate = clamp(t.pik_rate ?? 0.03, 0, 0.08);
+      if (t.warrants_pct != null) t.warrants_pct = clamp(t.warrants_pct, 0.01, 0.1);
+      t.is_pik = false; // mezz uses the cash-rate + pik_rate split, not full-PIK
+      t.sweep_priority = 0; // mezz is not cash-swept
+    }
+    if (t.kind === "ddtl") {
+      t.commitment_mm = clamp(t.commitment_mm ?? 300, 50, 1500);
+      t.draw_year = Math.round(clamp(t.draw_year ?? 2, 2, Math.max(2, c.hold_years - 1)));
+      t.ticking_fee_pct = clamp(t.ticking_fee_pct ?? 0.005, 0.0025, 0.01);
+      t.size_turns = 0; // undrawn at close
+      t.is_pik = false;
+      if (c.addon && t.draw_year !== c.addon.year) t.draw_year = c.addon.year; // DDTL pairs with the add-on when both exist
+    }
+  }
   return c;
 }

@@ -24,7 +24,8 @@ export default function ModelTestPage() {
 
   // setup
   const [difficulty, setDifficulty] = useState<TestDifficulty>("level4");
-  const [industry, setIndustry] = useState<string>("Consumer & Retail");
+  const [industry, setIndustry] = useState<string>("Random");
+  const [resolvedIndustry, setResolvedIndustry] = useState<string>("");
   const [hold, setHold] = useState(5);
   const [presentation, setPresentation] = useState<"direct" | "cim">("direct");
   const [concepts, setConcepts] = useState<string[]>(DIFF_DEFAULTS.level4);
@@ -64,10 +65,12 @@ export default function ModelTestPage() {
     setError(null);
     setPhase("generating");
     try {
+      const picked = industry === "Random" ? INDUSTRIES[Math.floor(Math.random() * INDUSTRIES.length)] : industry;
+      setResolvedIndustry(picked);
       const res = await fetch("/api/modeltest-generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ concepts, hold_years: hold, difficulty, industry, presentation }),
+        body: JSON.stringify({ concepts, hold_years: hold, difficulty, industry: picked, presentation }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `Generation failed (${res.status})`);
@@ -165,28 +168,29 @@ export default function ModelTestPage() {
             <div className="field">
               <label>Difficulty</label>
               <select value={difficulty} onChange={(e) => setDiff(e.target.value as TestDifficulty)}>
-                <option value="level3">Level 3 — clean fundamentals (~90 min)</option>
-                <option value="level4">Level 4 — PF-style full test (~4 hrs)</option>
-                <option value="level5">Level 5 — structural complexity (~4 hrs)</option>
+                <option value="level3">Level 3 — Clean Fundamentals (~90 Min)</option>
+                <option value="level4">Level 4 — PF-Style Full Test (~4 Hrs)</option>
+                <option value="level5">Level 5 — Structural Complexity (~4 Hrs)</option>
               </select>
             </div>
             <div className="field">
               <label>Industry</label>
               <select value={industry} onChange={(e) => setIndustry(e.target.value)}>
+                <option value="Random">Random</option>
                 {INDUSTRIES.map((i) => <option key={i}>{i}</option>)}
               </select>
             </div>
             <div className="field">
               <label>Hold period</label>
               <select value={hold} onChange={(e) => setHold(Number(e.target.value))}>
-                {[3, 4, 5, 6, 7].map((n) => <option key={n} value={n}>{n} years</option>)}
+                {[3, 4, 5, 6, 7].map((n) => <option key={n} value={n}>{n} Years</option>)}
               </select>
             </div>
             <div className="field">
               <label>Presentation</label>
               <select value={presentation} onChange={(e) => setPresentation(e.target.value as "direct" | "cim")}>
-                <option value="direct">Direct assumptions (PF style)</option>
-                <option value="cim">CIM — numbers buried in prose</option>
+                <option value="direct">Direct Assumptions (PF Style)</option>
+                <option value="cim">CIM — Numbers Buried in Prose</option>
               </select>
             </div>
           </div>
@@ -227,7 +231,7 @@ export default function ModelTestPage() {
 
           <div className="row">
             <button className="primary" onClick={generate} disabled={phase === "generating"}>
-              {phase === "generating" ? "Generating case + solving reference model…" : "Generate test"}
+              {phase === "generating" ? "Generating case + solving reference model…" : "Generate Test"}
             </button>
             <span className="sub">Benchmark: {Math.round(bench / 60)} min. The timer starts when the case opens.</span>
           </div>
@@ -245,7 +249,7 @@ export default function ModelTestPage() {
           <div>
             <div className="eyebrow">05 · MODEL TEST</div>
             <h1>{company}</h1>
-            <p className="sub">{presentation === "cim" ? "Confidential Information Memorandum" : "Modelling test — direct assumptions"} · {hold}-year hold</p>
+            <p className="sub">{presentation === "cim" ? "Confidential Information Memorandum" : "Modelling Test — Direct Assumptions"} · {resolvedIndustry} · {hold}-Year Hold</p>
           </div>
           <div className="row">
             <span className="timer mono">{fmtClock(elapsed)}</span>
@@ -300,7 +304,7 @@ export default function ModelTestPage() {
               />
               <div className="row">
                 <button className="primary" onClick={submit} disabled={!file || phase === "grading"}>
-                  {phase === "grading" ? "Grading — parsing workbook, checking outputs, reviewing formulas…" : "Submit for grading"}
+                  {phase === "grading" ? "Grading — parsing workbook, checking outputs, reviewing formulas…" : "Submit for Grading"}
                 </button>
                 <button className="ghost" onClick={reset}>Abandon</button>
               </div>
@@ -321,7 +325,7 @@ export default function ModelTestPage() {
                     <div className="hint body">{hints[q.id]}</div>
                   ) : (
                     <button className="ghost" onClick={() => getHint(q.id)} disabled={hintLoading === q.id}>
-                      {hintLoading === q.id ? "Thinking…" : "Show hint"}
+                      {hintLoading === q.id ? "Thinking…" : "Show Hint"}
                     </button>
                   )}
                 </div>
@@ -344,7 +348,7 @@ export default function ModelTestPage() {
         </div>
         <div className="row">
           <button onClick={() => window.print()}>Export PDF</button>
-          <button className="primary" onClick={reset}>New test</button>
+          <button className="primary" onClick={reset}>New Test</button>
         </div>
       </div>
 

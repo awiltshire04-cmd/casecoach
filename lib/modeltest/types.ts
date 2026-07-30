@@ -39,12 +39,12 @@ export const TOGGLES: ToggleDef[] = [
   { key: "preferred_straight", label: "Straight preferred equity", category: "advanced", phase: "B", desc: "Non-convertible preferred in the stack" },
   { key: "covenants", label: "Covenant testing", category: "advanced", phase: "B", desc: "Leverage / coverage covenants tested through the forecast" },
   { key: "mip_waterfall", label: "MIP / co-invest waterfall", category: "advanced", phase: "B", desc: "Management incentive plan tiers and sponsor co-invest" },
-  { key: "qoe", label: "QoE EBITDA adjustments", category: "advanced", phase: "B", desc: "Buried quality-of-earnings adjustments you must find and apply" },
-  { key: "capex_split", label: "Maintenance vs growth capex", category: "advanced", phase: "B", desc: "Split capex drivers with different behavior" },
-  { key: "mezz_warrants", label: "Mezzanine with warrants", category: "advanced", phase: "B", desc: "Mezz tranche with attached equity warrants" },
-  { key: "ddtl", label: "Delayed-draw term loan", category: "advanced", phase: "B", desc: "Committed but undrawn facility with ticking fees" },
-  { key: "divestiture", label: "Asset divestiture mid-hold", category: "advanced", phase: "B", desc: "Sell a segment mid-hold; proceeds to debt paydown" },
-  { key: "nwc_peg", label: "Working capital peg / true-up", category: "advanced", phase: "B", desc: "Cash-free debt-free NWC adjustment at close" },
+  { key: "qoe", label: "QoE EBITDA adjustments", category: "advanced", phase: "A", desc: "Buried quality-of-earnings adjustments you must find and apply" },
+  { key: "capex_split", label: "Maintenance vs growth capex", category: "advanced", phase: "A", desc: "Split capex drivers with different behavior" },
+  { key: "mezz_warrants", label: "Mezzanine with warrants", category: "advanced", phase: "A", desc: "Mezz tranche with attached equity warrants" },
+  { key: "ddtl", label: "Delayed-draw term loan", category: "advanced", phase: "A", desc: "Committed but undrawn facility with ticking fees" },
+  { key: "divestiture", label: "Asset divestiture mid-hold", category: "advanced", phase: "A", desc: "Sell a segment mid-hold; proceeds to debt paydown" },
+  { key: "nwc_peg", label: "Working capital peg / true-up", category: "advanced", phase: "A", desc: "Cash-free debt-free NWC adjustment at close" },
 ];
 
 export const PHASE_A_KEYS = TOGGLES.filter((t) => t.phase === "A").map((t) => t.key);
@@ -93,7 +93,7 @@ export type Segment = SegmentUnitsPrice | SegmentGroups | SegmentSimple;
 
 export interface Tranche {
   name: string;
-  kind: "revolver" | "term" | "notes" | "pik";
+  kind: "revolver" | "term" | "notes" | "pik" | "mezz" | "ddtl";
   size_turns?: number;        // × entry EBITDA (ignored for revolver)
   commitment_mm?: number;     // revolver only
   rate_mode: "floating" | "fixed";
@@ -104,6 +104,10 @@ export interface Tranche {
   is_pik: boolean;
   sweep_priority: number;     // 1 = swept first; 0 = never swept
   oid_pct?: number;           // e.g. 0.02 → issued at 98
+  pik_rate?: number;          // mezz: PIK portion accruing on top of the cash rate
+  warrants_pct?: number;      // mezz: % of common-pool equity taken at exit via warrants
+  draw_year?: number;         // ddtl: drawn at the beginning of this forecast year
+  ticking_fee_pct?: number;   // ddtl: fee on undrawn commitment (interest expense)
 }
 
 export interface CaseStructured {
@@ -112,7 +116,7 @@ export interface CaseStructured {
   transaction_year: number;   // e.g. 2025 close at 12/31
   hold_years: number;
   segments: Segment[];
-  costs: { sga_pct: number; rd_pct: number; da_pct_rev: number; capex_pct_rev: number };
+  costs: { sga_pct: number; rd_pct: number; da_pct_rev: number; capex_pct_rev: number; maint_capex_pct_rev?: number; growth_capex_pct_rev?: number };
   nwc:
     | { mode: "days"; ar_days: number; inv_days: number; ap_days: number; prepaid_pct: number; accrued_pct: number }
     | { mode: "pct_rev"; inc_nwc_pct_rev: number };
@@ -146,6 +150,9 @@ export interface CaseStructured {
     common_equity_shares_mm?: number; // computed: common funding / issuance price (filled by solver)
   };
   mgmt_options?: { options_mm: number; strike: number };
+  qoe?: { adjustments: { label: string; amount_mm: number }[] }; // items inflating REPORTED EBITDA; adjusted (true) EBITDA comes from the drivers
+  nwc_peg?: { peg_mm: number; delivered_mm: number };            // purchase price adjusts by delivered − peg at close
+  divestiture?: { year: number; segment_name: string; multiple_on_prior_segment_ebitda: number };
   quirks: { id: string; title: string; mechanic: string; param_refs: string[] }[];
   conventions: string[];        // stated so the candidate's model can match the key
 }
@@ -161,6 +168,7 @@ export interface YearRow {
   tranche_balances: Record<string, number>;  // end of year
   revolver_draw: number; cash: number;
   dividend: number;             // recap dividend paid this year (to sponsor/common)
+  divestiture_proceeds: number; // asset-sale proceeds received this year
   balance_check: number;        // |assets - L&E|, should be ~0
 }
 export interface ReferenceSolution {
