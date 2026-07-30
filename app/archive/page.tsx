@@ -48,6 +48,7 @@ export default function ArchivePage() {
   const [mtConceptFilter, setMtConceptFilter] = useState<string[]>([]);
   const [mtSortDir, setMtSortDir] = useState<1 | -1>(-1);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [slice, setSlice] = useState<SliceKey>("all");
   const [sliceVal, setSliceVal] = useState<string>("");
   const [insights, setInsights] = useState<Insight[] | null>(null);
@@ -61,10 +62,11 @@ export default function ArchivePage() {
     (async () => {
       try {
         const supa = browserClient();
-        const { data } = await supa
+        const { data, error: histErr } = await supa
           .from("attempt_history")
           .select("*")
           .order("created_at", { ascending: true });
+        if (histErr) throw histErr;
         setRows((data as HistRow[]) ?? []);
         try {
           const { data: mts } = await supa
@@ -100,8 +102,10 @@ export default function ArchivePage() {
         } catch {
           /* view may not exist on older installs */
         }
-      } catch {
-        /* env not set */
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : typeof e === "object" && e && "message" in e ? String((e as { message: unknown }).message) : "Unknown error";
+        setFetchError(msg);
+        console.error("Archive fetch failed:", e);
       } finally {
         setLoading(false);
       }
@@ -176,6 +180,21 @@ export default function ArchivePage() {
         <h1>Your reps</h1>
         <p className="sub">Every attempt, scored and timed. Slice the trend to find where you lag.</p>
       </div>
+
+      {fetchError && (
+        <div className="callout error" style={{ marginBottom: "1.2rem" }}>
+          <h4>Couldn't load your archive</h4>
+          <p>
+            {fetchError}
+          </p>
+          <p style={{ marginTop: "0.4rem" }}>
+            This means the Supabase connection failed, not that your data is missing — check it directly in the Supabase
+            Table Editor. If the message above mentions "env vars missing," your Vercel environment variables aren't
+            reaching this deployment; if it mentions "Invalid API key" or a 401, the key value itself doesn't match
+            what Supabase has on file.
+          </p>
+        </div>
+      )}
 
       {loading ? (
         <div className="empty">
