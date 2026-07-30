@@ -7,6 +7,7 @@ const TABS = [
   { href: "/practice", idx: "02", label: "Practice" },
   { href: "/drill", idx: "03", label: "Paper LBO" },
   { href: "/archive", idx: "04", label: "Archive" },
+  { href: "/modeltest", idx: "05", label: "Model Test" },
 ];
 
 export function Rail() {
