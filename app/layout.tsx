@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { Rail } from "@/components/Rail";
+import { Nav } from "@/components/Nav";
 
 export const metadata: Metadata = {
-  title: "CaseCoach — timed case interview practice",
-  description: "AI-generated PE / consulting case practice with bespoke feedback.",
+  title: "CaseCoach — PE interview practice",
+  description: "Case, behavioral and technical interview practice with AI feedback.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -20,7 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <div className="shell">
-          <Rail />
+          <Nav />
           <main className="content">{children}</main>
         </div>
       </body>

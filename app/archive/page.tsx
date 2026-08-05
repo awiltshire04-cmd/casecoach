@@ -160,7 +160,7 @@ export default function ArchivePage() {
   return (
     <>
       <div className="page-head">
-        <div className="eyebrow">03 · Archive</div>
+        <div className="eyebrow">Archive</div>
         <h1>Your reps</h1>
         <p className="sub">Every attempt, scored and timed. Slice the trend to find where you lag.</p>
       </div>
@@ -228,7 +228,7 @@ export default function ArchivePage() {
                     contentStyle={{ fontSize: 12, borderRadius: 5, border: "1px solid #e2e8f0", fontFamily: "JetBrains Mono, monospace" }}
                   />
                   <ReferenceLine y={avg} stroke="#94a3b8" strokeDasharray="3 3" />
-                  <Line type="monotone" dataKey="score" stroke="#2563eb" strokeWidth={2} dot={{ r: 3, fill: "#2563eb" }} name="AI score" />
+                  <Line type="monotone" dataKey="score" stroke="#1d4ed8" strokeWidth={2} dot={{ r: 3, fill: "#1d4ed8" }} name="AI score" />
                   <Line type="monotone" dataKey="self" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="4 3" dot={false} name="Self score" />
                 </LineChart>
               </ResponsiveContainer>

@@ -90,7 +90,7 @@ export default function DrillPage() {
   return (
     <>
       <div className="page-head">
-        <div className="eyebrow">03 · Paper LBO</div>
+        <div className="eyebrow">Case Prep · Paper LBO</div>
         <h1>Quant Drill</h1>
         <p className="sub">Fast reps on the math that trips people up live. Final answer plus key intermediates, checked to a tolerance.</p>
       </div>

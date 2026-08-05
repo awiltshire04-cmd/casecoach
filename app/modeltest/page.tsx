@@ -140,7 +140,7 @@ export default function ModelTestPage() {
       <div className="stack">
         <div className="page-head">
           <div>
-            <div className="eyebrow">05 · MODEL TEST</div>
+            <div className="eyebrow">Case Prep · Model Test</div>
             <h1>Modelling Test Trainer</h1>
             <p className="sub">
               Generate a full LBO modelling test, build it in Excel against the clock, then upload the
@@ -234,7 +234,7 @@ export default function ModelTestPage() {
       <div className="stack">
         <div className="page-head">
           <div>
-            <div className="eyebrow">05 · MODEL TEST</div>
+            <div className="eyebrow">Case Prep · Model Test</div>
             <h1>{company}</h1>
             <p className="sub">{presentation === "cim" ? "Confidential Information Memorandum" : "Modelling Test — Direct Assumptions"} · {resolvedIndustry} · {hold}-Year Hold</p>
           </div>
@@ -330,7 +330,7 @@ export default function ModelTestPage() {
     <div className="stack">
       <div className="page-head">
         <div>
-          <div className="eyebrow">05 · MODEL TEST</div>
+          <div className="eyebrow">Case Prep · Model Test</div>
           <h1>Results — {company}</h1>
         </div>
         <div className="row">

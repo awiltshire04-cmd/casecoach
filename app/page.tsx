@@ -1,224 +1,261 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { browserClient } from "@/lib/supabase";
-import { setActiveCase } from "@/lib/session";
-import { postJson } from "@/lib/http";
+import Link from "next/link";
+import { apiFetch } from "@/lib/http";
+import { Heatmap } from "@/components/Heatmap";
+import { scoreClass } from "@/components/Pieces";
 import {
-  CASE_TYPES,
-  INDUSTRIES,
-  FIRM_FLAVORS,
-  type CaseRow,
-  type CaseType,
-  type Difficulty,
-  type Length,
-} from "@/lib/types";
+  CATEGORY_META,
+  averageScore,
+  bucketByDay,
+  currentStreak,
+  longestStreak,
+  type ActivityEvent,
+} from "@/lib/activity";
 
-type Filters = {
-  type: CaseType;
-  length: Length;
-  has_financials: boolean;
-  industry: string;
-  difficulty: Difficulty;
-  firm_flavor: string;
-};
+function relative(at: string): string {
+  const diff = Date.now() - new Date(at).getTime();
+  const mins = Math.round(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.round(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
 
-const LENGTHS: Length[] = ["short", "medium", "long"];
-const DIFFS: Difficulty[] = ["easy", "medium", "hard"];
-
-export default function LibraryPage() {
+export default function HomePage() {
   const router = useRouter();
-  const [f, setF] = useState<Filters>({
-    type: "lbo",
-    length: "medium",
-    has_financials: true,
-    industry: INDUSTRIES[0],
-    difficulty: "medium",
-    firm_flavor: "",
-  });
-  const [busy, setBusy] = useState(false);
+  const [events, setEvents] = useState<ActivityEvent[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [library, setLibrary] = useState<CaseRow[]>([]);
-  const [loadingLib, setLoadingLib] = useState(true);
+  const [degraded, setDegraded] = useState<string[]>([]);
+  const [missing, setMissing] = useState<string[]>([]);
 
-  async function loadLibrary() {
-    setLoadingLib(true);
-    try {
-      const supa = browserClient();
-      const { data } = await supa.from("cases").select("*").order("created_at", { ascending: false }).limit(50);
-      setLibrary((data as CaseRow[]) ?? []);
-    } catch {
-      /* env not set yet — leave empty */
-    } finally {
-      setLoadingLib(false);
-    }
-  }
   useEffect(() => {
-    loadLibrary();
+    (async () => {
+      try {
+        const res = await apiFetch<{ events: ActivityEvent[]; degraded?: string[]; missing?: string[] }>(
+          "/api/dashboard"
+        );
+        setEvents(res.events ?? []);
+        setDegraded(res.degraded ?? []);
+        setMissing(res.missing ?? []);
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : "Could not load your progress");
+        setEvents([]);
+      }
+    })();
   }, []);
 
-  function randomize() {
-    // respect active filters; randomize only the axes the user hasn't "locked" by intent.
-    // here we randomize type, industry, difficulty, length within current selection space.
-    const pick = <T,>(arr: readonly T[]) => arr[Math.floor(Math.random() * arr.length)];
-    setF((prev) => ({
-      ...prev,
-      type: pick(CASE_TYPES).value,
-      industry: pick(INDUSTRIES),
-      difficulty: pick(DIFFS),
-      length: pick(LENGTHS),
-    }));
-  }
+  const days = useMemo(() => bucketByDay(events ?? []), [events]);
+  const dayKeys = useMemo(() => new Set(days.keys()), [days]);
 
-  async function generate() {
-    setBusy(true);
-    setErr(null);
-    try {
-      const json = await postJson<{ case: CaseRow }>("/api/generate-case", {
-        ...f,
-        firm_flavor: f.firm_flavor || null,
-      });
-      setActiveCase(json.case);
-      router.push("/practice");
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Generation failed");
-    } finally {
-      setBusy(false);
-    }
-  }
+  const stats = useMemo(() => {
+    const list = events ?? [];
+    return {
+      sessions: list.length,
+      avg: averageScore(list),
+      streak: currentStreak(dayKeys),
+      best: longestStreak(dayKeys),
+      activeDays: dayKeys.size,
+    };
+  }, [events, dayKeys]);
 
-  function attempt(c: CaseRow) {
-    setActiveCase(c);
-    router.push("/practice");
-  }
+  const byCategory = useMemo(() => {
+    const list = events ?? [];
+    return CATEGORY_META.map((meta) => {
+      const mine = list.filter((e) => e.category === meta.key);
+      const avg = averageScore(mine);
+      const last = mine[0] ?? null;
+      return { meta, attempts: mine.length, avg, last };
+    });
+  }, [events]);
+
+  const loading = events === null;
 
   return (
     <>
-      <div className="page-head">
-        <div className="eyebrow">01 · Library</div>
-        <h1>Set up a case</h1>
-        <p className="sub">Generate a fresh case on demand — it&apos;s saved to your library so you can re-attempt and compare.</p>
+      <div className="hero">
+        <div>
+          <div className="eyebrow">Dashboard</div>
+          <h1>Your progress</h1>
+          <p className="sub">
+            Every rep across behavioral, technical and case prep — scored, tracked and kept honest.
+          </p>
+        </div>
+        <div className="row wrap no-print">
+          <Link href="/cases">
+            <button className="primary">Start a case</button>
+          </Link>
+          <Link href="/drill">
+            <button>Quick drill</button>
+          </Link>
+        </div>
       </div>
 
-      <div className="card stack">
-        <div className="filters">
-          <label className="field">
-            <span>Case type</span>
-            <select value={f.type} onChange={(e) => setF({ ...f, type: e.target.value as CaseType })}>
-              {CASE_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Industry</span>
-            <select value={f.industry} onChange={(e) => setF({ ...f, industry: e.target.value })}>
-              <option value="Random">Random</option>
-              {INDUSTRIES.map((i) => (
-                <option key={i} value={i}>
-                  {i}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Difficulty</span>
-            <select value={f.difficulty} onChange={(e) => setF({ ...f, difficulty: e.target.value as Difficulty })}>
-              {DIFFS.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Length</span>
-            <select value={f.length} onChange={(e) => setF({ ...f, length: e.target.value as Length })}>
-              {LENGTHS.map((l) => (
-                <option key={l} value={l}>
-                  {l}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Financials / exhibits</span>
-            <select
-              value={f.has_financials ? "yes" : "no"}
-              onChange={(e) => setF({ ...f, has_financials: e.target.value === "yes" })}
-            >
-              <option value="yes">Included</option>
-              <option value="no">None</option>
-            </select>
-          </label>
-          <label className="field">
-            <span>Firm flavor</span>
-            <select value={f.firm_flavor} onChange={(e) => setF({ ...f, firm_flavor: e.target.value })}>
-              <option value="">Generic</option>
-              {FIRM_FLAVORS.map((ff) => (
-                <option key={ff.value} value={ff.value}>
-                  {ff.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <div className="row">
-          <button className="primary" onClick={generate} disabled={busy}>
-            {busy ? (
-              <>
-                <span className="spin" /> &nbsp;Generating…
-              </>
-            ) : (
-              "Generate & Start"
-            )}
-          </button>
-          <button onClick={randomize} disabled={busy}>
-            Randomize
-          </button>
-          <div className="spacer" />
-          {f.firm_flavor && (
-            <span className="chip blue">{FIRM_FLAVORS.find((x) => x.value === f.firm_flavor)?.note}</span>
-          )}
-        </div>
-        {err && <p style={{ color: "var(--bad)", fontSize: "0.85rem", margin: 0 }}>{err}</p>}
-      </div>
-
-      <div className="page-head" style={{ marginTop: "2rem" }}>
-        <h2>Your library</h2>
-        <p className="sub">Re-attempt any saved case to compare scores over time.</p>
-      </div>
-
-      {loadingLib ? (
-        <div className="empty">
-          <span className="spin" /> loading…
-        </div>
-      ) : library.length === 0 ? (
-        <div className="empty">No cases yet. Generate one above to get started.</div>
-      ) : (
-        <div className="stack">
-          {library.map((c) => (
-            <div className="card row wrap" key={c.id}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 600 }}>{c.title}</div>
-                <div className="row wrap" style={{ marginTop: "0.4rem", gap: "0.35rem" }}>
-                  <span className="chip blue">{CASE_TYPES.find((t) => t.value === c.type)?.label ?? c.type}</span>
-                  <span className="chip">{c.industry}</span>
-                  <span className="chip">{c.difficulty}</span>
-                  <span className="chip">{c.length}</span>
-                  {c.has_financials && <span className="chip">exhibits</span>}
-                  {c.firm_flavor && <span className="chip">{c.firm_flavor}</span>}
-                </div>
-              </div>
-              <div className="spacer" />
-              <button onClick={() => attempt(c)}>Attempt</button>
-            </div>
-          ))}
+      {err && (
+        <div className="callout error" style={{ marginBottom: "var(--s5)" }}>
+          <h4>Couldn&apos;t load your progress</h4>
+          <p>{err}</p>
         </div>
       )}
+      {degraded.length > 0 && (
+        <div className="callout error" style={{ marginBottom: "var(--s5)" }}>
+          <h4>Some sources didn&apos;t load</h4>
+          <p>{degraded.join(" · ")}. Everything else below is up to date.</p>
+        </div>
+      )}
+      {missing.length > 0 && (
+        <div className="callout" style={{ marginBottom: "var(--s5)" }}>
+          <h4>Not set up yet: {missing.join(", ")}</h4>
+          <p>
+            Those tables don&apos;t exist in Supabase, so nothing can be recorded against them. Run the matching
+            section of <span className="mono">supabase/schema.sql</span> to enable them — the rest of the dashboard
+            is unaffected.
+          </p>
+        </div>
+      )}
+
+      <div className="stack loose">
+        {/* ---- headline stats ---- */}
+        <div className="statgrid">
+          {loading
+            ? Array.from({ length: 4 }).map((_, i) => (
+                <div className="stat" key={i}>
+                  <div className="skel skel-line w-60" />
+                  <div className="skel skel-line w-40" style={{ height: 24, marginTop: 10 }} />
+                </div>
+              ))
+            : [
+                { k: "Sessions", v: stats.sessions, d: `across ${stats.activeDays} day${stats.activeDays === 1 ? "" : "s"}` },
+                { k: "Average score", v: stats.avg ?? "—", unit: stats.avg != null ? "/100" : "", d: "all graded attempts" },
+                { k: "Current streak", v: stats.streak, unit: stats.streak === 1 ? " day" : " days", d: `best ${stats.best}` },
+                { k: "Active days", v: stats.activeDays, d: "all time" },
+              ].map((s) => (
+                <div className="stat" key={s.k}>
+                  <div className="k">{s.k}</div>
+                  <div className="v">
+                    {s.v}
+                    {s.unit && <span className="unit">{s.unit}</span>}
+                  </div>
+                  <div className="d">{s.d}</div>
+                </div>
+              ))}
+        </div>
+
+        {/* ---- activity heatmap ---- */}
+        <div className="card">
+          <div className="section-head">
+            <h2>Practice activity</h2>
+            <span className="sub">Hover any day for the breakdown</span>
+          </div>
+          {loading ? <div className="skel skel-block" style={{ height: 120 }} /> : <Heatmap days={days} />}
+        </div>
+
+        {/* ---- score by category ---- */}
+        <div>
+          <div className="section-head">
+            <h2>By category</h2>
+            <span className="sub">Where you&apos;re strong and where you&apos;re not</span>
+          </div>
+          <div className="catgrid">
+            {loading
+              ? Array.from({ length: 5 }).map((_, i) => (
+                  <div className="card" key={i}>
+                    <div className="skel skel-line w-40" />
+                    <div className="skel skel-line w-80" />
+                    <div className="skel skel-line w-60" />
+                  </div>
+                ))
+              : byCategory.map(({ meta, attempts, avg, last }) => {
+                  const isUpcoming = meta.upcoming && attempts === 0;
+                  return (
+                    <div
+                      className={`card catcard interactive${attempts === 0 ? " empty-cat" : ""}`}
+                      key={meta.key}
+                      onClick={() => router.push(meta.href)}
+                    >
+                      <div className="top">
+                        <span className="name">{meta.label}</span>
+                        <div className="spacer" />
+                        {isUpcoming ? (
+                          <span className="chip accent">Coming next</span>
+                        ) : (
+                          <span className="chip">{attempts} rep{attempts === 1 ? "" : "s"}</span>
+                        )}
+                      </div>
+                      <div className="score">
+                        {avg != null ? (
+                          <span className={scoreClass(avg)}>{avg}</span>
+                        ) : (
+                          <span>—</span>
+                        )}
+                        {avg != null && <span className="unit">/100</span>}
+                      </div>
+                      <div className="track">
+                        <div className="fill" style={{ width: `${avg ?? 0}%` }} />
+                      </div>
+                      <div className="meta">
+                        {isUpcoming
+                          ? "Not built yet"
+                          : last
+                            ? `Last: ${last.title} · ${relative(last.at)}`
+                            : meta.blurb}
+                      </div>
+                    </div>
+                  );
+                })}
+          </div>
+        </div>
+
+        {/* ---- recent activity ---- */}
+        <div className="card">
+          <div className="section-head">
+            <h2>Recent activity</h2>
+            <div className="spacer" />
+            <Link href="/archive" className="sub">
+              Full archive →
+            </Link>
+          </div>
+          {loading ? (
+            <>
+              <div className="skel skel-line w-80" />
+              <div className="skel skel-line w-60" />
+              <div className="skel skel-line w-40" />
+            </>
+          ) : (events?.length ?? 0) === 0 ? (
+            <div className="empty">
+              <strong>Nothing here yet</strong>
+              Generate a case or run a paper LBO drill and it&apos;ll show up here.
+            </div>
+          ) : (
+            <div className="feed">
+              {(events ?? []).slice(0, 8).map((e) => (
+                <div
+                  className={`feed-item${e.href ? " clickable" : ""}`}
+                  key={`${e.category}-${e.id}`}
+                  onClick={() => e.href && router.push(e.href)}
+                >
+                  <span className="chip">{CATEGORY_META.find((c) => c.key === e.category)?.label ?? e.category}</span>
+                  <span className="who">
+                    <span className="t">{e.title}</span>
+                    <span className="m">
+                      {e.detail} · {relative(e.at)}
+                    </span>
+                  </span>
+                  {e.score != null ? (
+                    <span className={`scorepill ${scoreClass(e.score)}`}>{e.score}</span>
+                  ) : (
+                    <span className="sub">—</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </>
   );
 }

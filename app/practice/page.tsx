@@ -26,7 +26,7 @@ export default function PracticePage() {
   useEffect(() => {
     const active = getActiveCase();
     if (!active) {
-      router.replace("/");
+      router.replace("/cases");
       return;
     }
     setC(active);
@@ -111,7 +111,7 @@ export default function PracticePage() {
   return (
     <>
       <div className="page-head">
-        <div className="eyebrow">02 · Practice</div>
+        <div className="eyebrow">Case Prep · Practice</div>
         <h1>{c.title}</h1>
         <div className="row wrap" style={{ marginTop: "0.5rem", gap: "0.35rem" }}>
           <span className="chip blue">{c.type}</span>
@@ -314,7 +314,7 @@ export default function PracticePage() {
             <button className="primary" onClick={() => router.push("/archive")}>
               View archive
             </button>
-            <button onClick={() => router.push("/")}>New Case</button>
+            <button onClick={() => router.push("/cases")}>New Case</button>
             <div className="spacer" />
             <button onClick={() => window.print()}>Export to PDF</button>
           </div>
