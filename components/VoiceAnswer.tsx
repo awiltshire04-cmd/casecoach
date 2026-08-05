@@ -39,6 +39,7 @@ export function VoiceAnswer({
   const [typed, setTyped] = useState("");
   const [elapsed, setElapsed] = useState(0);
   const [micError, setMicError] = useState<string | null>(null);
+  const [noAudioHint, setNoAudioHint] = useState(false);
 
   const recRef = useRef<SpeechRecognition | null>(null);
   const startedAt = useRef<number>(0);
@@ -46,6 +47,8 @@ export function VoiceAnswer({
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Chrome ends recognition on silence; we restart unless the user asked to stop.
   const wantListening = useRef(false);
+  const restarts = useRef(0);
+  const gotAudio = useRef(false);
 
   useEffect(() => {
     const ok = isSpeechSupported();
@@ -89,6 +92,8 @@ export function VoiceAnswer({
     rec.maxAlternatives = 1;
 
     rec.onresult = (e: SpeechRecognitionEvent) => {
+      gotAudio.current = true;
+      setNoAudioHint(false);
       let addition = "";
       let pending = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -112,30 +117,68 @@ export function VoiceAnswer({
       );
     };
 
+    rec.onstart = () => {
+      // Only now is the engine actually capturing. Claiming "Listening" before
+      // this is how a failed start looks identical to a working one.
+      setListening(true);
+      // "Listening" with nothing arriving is the hardest state to debug from the
+      // outside, so call it out rather than letting the timer tick forever.
+      window.setTimeout(() => {
+        if (wantListening.current && !gotAudio.current) setNoAudioHint(true);
+      }, 7000);
+      startedAt.current = Date.now();
+      stopTimer();
+      timerRef.current = setInterval(() => {
+        setElapsed(Math.round(accumulated.current + (Date.now() - startedAt.current) / 1000));
+      }, 250);
+    };
+
     rec.onend = () => {
       // Silence ends a recognition run; resume so long pauses don't cut you off.
-      if (wantListening.current) {
-        try {
-          rec.start();
-        } catch {
-          /* already restarting */
-        }
+      // But a mic that never produces audio ends instantly and forever, so cap
+      // the restarts rather than spinning invisibly.
+      if (!wantListening.current) return;
+      restarts.current += 1;
+      if (restarts.current > 40) {
+        wantListening.current = false;
+        setListening(false);
+        stopTimer();
+        setMicError(
+          "Speech recognition kept dropping out without picking up any audio. Check that the right microphone is selected and unmuted in your browser's site settings, or switch to typing."
+        );
+        return;
+      }
+      try {
+        rec.start();
+      } catch {
+        /* already restarting */
       }
     };
 
     recRef.current = rec;
     wantListening.current = true;
+    restarts.current = 0;
+    gotAudio.current = false;
+    setNoAudioHint(false);
     try {
       rec.start();
-    } catch {
-      /* start() throws if called twice in a row */
+    } catch (e) {
+      wantListening.current = false;
+      setListening(false);
+      setMicError(
+        `Couldn't start speech recognition${e instanceof Error ? ` (${e.message})` : ""}. Reload the page, or switch to typing.`
+      );
+      return;
     }
-    setListening(true);
-    startedAt.current = Date.now();
-    stopTimer();
-    timerRef.current = setInterval(() => {
-      setElapsed(Math.round(accumulated.current + (Date.now() - startedAt.current) / 1000));
-    }, 250);
+
+    // If onstart never fires, the engine failed silently — say so.
+    window.setTimeout(() => {
+      if (wantListening.current && !startedAt.current) {
+        setMicError(
+          "Speech recognition didn't start. This browser may not support it, or the microphone is blocked — switch to typing to carry on."
+        );
+      }
+    }, 2500);
   }, [stopTimer]);
 
   const reset = () => {
@@ -171,6 +214,16 @@ export function VoiceAnswer({
       {micError && (
         <div className="callout error">
           <p>{micError}</p>
+        </div>
+      )}
+      {noAudioHint && !micError && (
+        <div className="callout">
+          <h4>Listening, but nothing is coming through</h4>
+          <p>
+            The recogniser is running and hasn&apos;t received any audio. Usually that&apos;s Chrome listening to the
+            wrong input — click the padlock in the address bar and check which microphone this site is using, and
+            that it isn&apos;t muted. You can switch to typing and keep going in the meantime.
+          </p>
         </div>
       )}
 

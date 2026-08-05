@@ -25,9 +25,11 @@ export async function POST(req: Request) {
       const section = body.section ?? "behavioral";
       const count = Math.max(1, Math.min(20, body.count ?? 5));
 
+      // Lean fields only: the interview screen renders prompts, and grading
+      // reads guidance server-side from the question row.
       let q = supa
         .from("questions")
-        .select("id, section, category, prompt, difficulty, source, source_ref, concept_tags, guidance")
+        .select("id, section, category, prompt, difficulty, source, source_ref, concept_tags")
         .eq("section", section)
         .eq("active", true);
       if (body.category) q = q.eq("category", body.category);

@@ -35,6 +35,7 @@ export function BankView({
   const [count, setCount] = useState(5);
   const [starting, setStarting] = useState(false);
   const [seeding, setSeeding] = useState(false);
+  const [seedNote, setSeedNote] = useState<string | null>(null);
   const [flaggedCount, setFlaggedCount] = useState(0);
 
   async function load() {
@@ -107,14 +108,21 @@ export function BankView({
   async function runSeed() {
     setSeeding(true);
     setErr(null);
+    setSeedNote(null);
     try {
       const res = await apiFetch<{ added: number; after: number }>("/api/interview/seed", { method: "POST" });
       await load();
       setSetupMsg(null);
-      if (res.added === 0 && res.after > 0) setErr(null);
+      // Always say what happened. Silently succeeding looks identical to
+      // silently failing, which is how this read as "the button does nothing".
+      setSeedNote(
+        res.added > 0
+          ? `Loaded ${res.added} questions. The bank now has ${res.after}.`
+          : `Nothing to add — all ${res.after} questions were already loaded.`
+      );
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Seeding failed";
-      if (/migration_005/i.test(msg)) setSetupMsg(msg);
+      if (/migration_00\d/i.test(msg)) setSetupMsg(msg);
       else setErr(msg);
     } finally {
       setSeeding(false);
@@ -151,7 +159,15 @@ export function BankView({
         </div>
       )}
 
-      {seedable && empty && !setupMsg && (
+      {seedNote && (
+        <div className="callout accent" style={{ marginBottom: "var(--s5)" }}>
+          <p>{seedNote}</p>
+        </div>
+      )}
+
+      {/* Shown while the bank is empty, and after a setup error even if it isn't —
+          otherwise a failed load leaves no way to retry. */}
+      {seedable && (empty || setupMsg) && (
         <div className="card stack" style={{ marginBottom: "var(--s6)" }}>
           <div>
             <h2>Load the question bank</h2>

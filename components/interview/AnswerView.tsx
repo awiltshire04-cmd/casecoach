@@ -38,10 +38,13 @@ export function AnswerView({
   useEffect(() => {
     (async () => {
       try {
-        const res = await apiFetch<{ questions: Question[] }>(`/api/interview/questions?section=${section}`);
-        const found = (res.questions ?? []).find((q) => q.id === questionId) ?? null;
-        if (!found) throw new Error("That question isn't in the bank.");
-        setQuestion(found);
+        // Fetch this one question, not the whole bank — the technical bank is
+        // 614 rows and pulling it to render a single prompt cost ~800KB.
+        const res = await apiFetch<{ question: Question }>(
+          `/api/interview/questions?id=${encodeURIComponent(questionId)}`
+        );
+        if (!res.question) throw new Error("That question isn't in the bank.");
+        setQuestion(res.question);
       } catch (e) {
         setErr(e instanceof Error ? e.message : "Could not load the question");
       }
