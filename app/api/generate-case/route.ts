@@ -5,7 +5,9 @@ import { buildGenerationMessages } from "@/lib/prompts";
 import type { GenerateParams, GeneratedCase } from "@/lib/types";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+// A single generation call measures 55-75s, and jsonCall retries once on
+// malformed JSON — 60s guarantees a platform timeout. Match the modeltest routes.
+export const maxDuration = 300;
 
 export async function POST(req: Request) {
   try {

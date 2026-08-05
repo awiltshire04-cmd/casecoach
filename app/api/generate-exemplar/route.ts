@@ -4,7 +4,7 @@ import { serviceClient, exhibitsToText } from "@/lib/supabase";
 import { buildExemplarMessages } from "@/lib/prompts";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function POST(req: Request) {
   try {

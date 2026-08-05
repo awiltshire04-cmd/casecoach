@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { INDUSTRIES } from "@/lib/types";
+import { apiFetch, postJson } from "@/lib/http";
 import { TOGGLES, TEST_TIME_BENCH, type GradeBreakdown, type TestDifficulty } from "@/lib/modeltest/types";
 
 type Phase = "setup" | "generating" | "run" | "grading" | "graded";
@@ -67,26 +68,20 @@ export default function ModelTestPage() {
     try {
       const picked = industry === "Random" ? INDUSTRIES[Math.floor(Math.random() * INDUSTRIES.length)] : industry;
       setResolvedIndustry(picked);
-      const res = await fetch("/api/modeltest-generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ concepts, hold_years: hold, difficulty, industry: picked, presentation }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `Generation failed (${res.status})`);
+      const data = await postJson<{ id: string; pages: Page[]; quirks?: Quirk[]; company: string }>(
+        "/api/modeltest-generate",
+        { concepts, hold_years: hold, difficulty, industry: picked, presentation }
+      );
       setTestId(data.id);
       setPages(data.pages);
       setQuirks(data.quirks ?? []);
       setCompany(data.company);
       setPageIdx(0);
       // open the attempt — timer anchors server-side
-      const openRes = await fetch("/api/modeltest-submit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "open", testId: data.id }),
+      const openData = await postJson<{ attemptId: string; opened_at: string }>("/api/modeltest-submit", {
+        action: "open",
+        testId: data.id,
       });
-      const openData = await openRes.json();
-      if (!openRes.ok) throw new Error(openData.error || "Could not open attempt");
       setAttemptId(openData.attemptId);
       setOpenedAt(new Date(openData.opened_at).getTime());
       setElapsed(0);
@@ -101,13 +96,7 @@ export default function ModelTestPage() {
     if (hints[quirkId] || !testId) return;
     setHintLoading(quirkId);
     try {
-      const res = await fetch("/api/modeltest-hint", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ testId, quirkId }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Hint failed");
+      const data = await postJson<{ hint: string }>("/api/modeltest-hint", { testId, quirkId });
       setHints((h) => ({ ...h, [quirkId]: data.hint }));
     } catch (e) {
       setHints((h) => ({ ...h, [quirkId]: `Hint unavailable: ${e instanceof Error ? e.message : "error"}` }));
@@ -126,9 +115,7 @@ export default function ModelTestPage() {
       fd.append("writeup", writeup);
       fd.append("testId", testId);
       fd.append("attemptId", attemptId);
-      const res = await fetch("/api/modeltest-submit", { method: "POST", body: fd });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `Grading failed (${res.status})`);
+      const data = await apiFetch<{ grade: GradeBreakdown }>("/api/modeltest-submit", { method: "POST", body: fd });
       setGrade(data.grade);
       setPhase("graded");
     } catch (e) {

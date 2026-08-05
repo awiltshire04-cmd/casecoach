@@ -4,7 +4,7 @@ import { serviceClient } from "@/lib/supabase";
 import { buildTrendMessages } from "@/lib/prompts";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 interface Insight {
   kind: "weakness" | "strength";

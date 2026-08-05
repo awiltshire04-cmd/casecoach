@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { browserClient } from "@/lib/supabase";
+import { apiFetch } from "@/lib/http";
 import { scoreClass } from "@/components/Pieces";
 import { CASE_TYPES } from "@/lib/types";
 import { TOGGLES } from "@/lib/modeltest/types";
@@ -45,6 +46,7 @@ export default function ArchivePage() {
   const router = useRouter();
   const [rows, setRows] = useState<HistRow[]>([]);
   const [mtRows, setMtRows] = useState<MtRow[]>([]);
+  const [mtError, setMtError] = useState<string | null>(null);
   const [mtConceptFilter, setMtConceptFilter] = useState<string[]>([]);
   const [mtSortDir, setMtSortDir] = useState<1 | -1>(-1);
   const [loading, setLoading] = useState(true);
@@ -68,29 +70,13 @@ export default function ArchivePage() {
           .order("created_at", { ascending: true });
         if (histErr) throw histErr;
         setRows((data as HistRow[]) ?? []);
+        // Served by the service role: the model-test tables have RLS on with no
+        // policies, so an anon read here silently returns zero rows.
         try {
-          const { data: mts } = await supa
-            .from("model_test_attempts")
-            .select("id, opened_at, status, time_taken_sec, grade, model_tests(params, case_structured)")
-            .order("opened_at", { ascending: false });
-          type Raw = { id: string; opened_at: string; status: string; time_taken_sec: number | null;
-            grade: { total?: number } | null;
-            model_tests: { params: { concepts?: string[]; difficulty?: string; presentation?: string; industry?: string } | null;
-                           case_structured: { company?: string } | null } | null };
-          setMtRows(((mts ?? []) as unknown as Raw[]).map((m) => ({
-            id: m.id,
-            opened_at: m.opened_at,
-            status: m.status,
-            time_taken_sec: m.time_taken_sec,
-            total: m.grade?.total ?? null,
-            company: m.model_tests?.case_structured?.company ?? "—",
-            concepts: m.model_tests?.params?.concepts ?? [],
-            difficulty: m.model_tests?.params?.difficulty ?? "",
-            presentation: m.model_tests?.params?.presentation ?? "",
-            industry: m.model_tests?.params?.industry ?? "",
-          })));
-        } catch {
-          /* model test tables may not exist on older installs */
+          const { rows: mts } = await apiFetch<{ rows: MtRow[] }>("/api/modeltest-archive");
+          setMtRows(mts ?? []);
+        } catch (e) {
+          setMtError(e instanceof Error ? e.message : "Could not load model tests");
         }
         try {
           const { data: traps } = await supa
@@ -159,9 +145,7 @@ export default function ArchivePage() {
     setLoadingInsights(true);
     setInsightNote(null);
     try {
-      const res = await fetch("/api/trend-insights", { method: "POST" });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed");
+      const json = await apiFetch<{ insights?: Insight[]; note?: string }>("/api/trend-insights", { method: "POST" });
       setInsights(json.insights ?? []);
       if (json.note) setInsightNote(json.note);
     } catch (e) {
@@ -352,7 +336,12 @@ export default function ArchivePage() {
           <h2>Model Tests</h2>
           <p className="sub">Every generated modelling test. Click a row to reopen it read-only, re-download the case PDF, or pull your submitted workbook.</p>
         </div>
-        {mtRows.length === 0 ? (
+        {mtError ? (
+          <div className="callout error">
+            <h4>Couldn&apos;t load your model tests</h4>
+            <p>{mtError}</p>
+          </div>
+        ) : mtRows.length === 0 ? (
           <div className="empty">No modelling tests yet — generate one from the Model Test tab.</div>
         ) : (
           <>

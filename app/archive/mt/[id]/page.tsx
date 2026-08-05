@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { browserClient } from "@/lib/supabase";
+import { apiFetch } from "@/lib/http";
 import { TOGGLES, type GradeBreakdown } from "@/lib/modeltest/types";
 
 interface Loaded {
@@ -31,15 +31,10 @@ export default function ModelTestDetail() {
   useEffect(() => {
     (async () => {
       try {
-        const supa = browserClient();
-        const { data: att, error } = await supa
-          .from("model_test_attempts")
-          .select("*, model_tests(params, case_structured, case_rendered)")
-          .eq("id", id)
-          .single();
-        if (error || !att) throw error ?? new Error("Attempt not found");
-        const { model_tests, ...attempt } = att as unknown as Loaded["attempt"] & { model_tests: Loaded["test"] };
-        setData({ attempt, test: model_tests });
+        // Read through the service role — see app/api/modeltest-archive/route.ts.
+        const loaded = await apiFetch<Loaded>(`/api/modeltest-archive?attemptId=${encodeURIComponent(id)}`);
+        if (!loaded.attempt || !loaded.test) throw new Error("Attempt not found");
+        setData(loaded);
       } catch (e) {
         setErr(e instanceof Error ? e.message : "Failed to load attempt");
       }

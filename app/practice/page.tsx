@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getActiveCase } from "@/lib/session";
+import { postJson } from "@/lib/http";
 import { ExhibitTable, ScoreReadout, fmtTime } from "@/components/Pieces";
 import { DEFAULT_DIMENSIONS, type CaseRow, type GradeResult } from "@/lib/types";
 
@@ -57,19 +58,20 @@ export default function PracticePage() {
     setErr(null);
     const timeTaken = Math.round((Date.now() - startedAt.current) / 1000);
     try {
-      const res = await fetch("/api/grade-attempt", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          caseId: c.id,
-          response,
-          selfScore,
-          timeAllottedSec: c.suggested_time_sec,
-          timeTakenSec: Math.max(1, timeTaken),
-        }),
+      const json = await postJson<{
+        attempt: {
+          id: string;
+          dimension_scores: Record<string, number>;
+          feedback: { dimensions: Record<string, string>; tests_callouts: { title: string; body: string }[] };
+        };
+        total: number;
+      }>("/api/grade-attempt", {
+        caseId: c.id,
+        response,
+        selfScore,
+        timeAllottedSec: c.suggested_time_sec,
+        timeTakenSec: Math.max(1, timeTaken),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Grading failed");
       setResult({
         attemptId: json.attempt.id,
         total: json.total,
@@ -88,13 +90,10 @@ export default function PracticePage() {
     if (!c) return;
     setLoadingExemplar(true);
     try {
-      const res = await fetch("/api/generate-exemplar", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ caseId: c.id, candidateResponse: response }),
+      const json = await postJson<{ exemplar: string; gaps?: string[] }>("/api/generate-exemplar", {
+        caseId: c.id,
+        candidateResponse: response,
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Exemplar failed");
       setExemplar(json.exemplar);
       setGaps(json.gaps ?? null);
     } catch (e) {

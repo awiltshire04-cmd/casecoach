@@ -3,9 +3,17 @@ import { useEffect, useRef, useState } from "react";
 import { fmtTime } from "@/components/Pieces";
 import { CHECKED_FIELDS, type LboScenario, type LboAnswers } from "@/lib/lbo";
 import { INDUSTRIES } from "@/lib/types";
+import { postJson } from "@/lib/http";
 
 type Phase = "idle" | "solving" | "done";
 type Difficulty = "easy" | "medium" | "hard";
+type GradeResponse = {
+  correctness: Record<string, boolean>;
+  passed: boolean;
+  correct: LboAnswers;
+  passCount: number;
+  total: number;
+};
 
 const DRILL_TIME = 4 * 60; // 4 minutes per drill
 
@@ -17,13 +25,7 @@ export default function DrillPage() {
   const [industry, setIndustry] = useState<string>("Random");
   const [remaining, setRemaining] = useState(DRILL_TIME);
   const [inputs, setInputs] = useState<Record<string, string>>({});
-  const [result, setResult] = useState<{
-    correctness: Record<string, boolean>;
-    passed: boolean;
-    correct: LboAnswers;
-    passCount: number;
-    total: number;
-  } | null>(null);
+  const [result, setResult] = useState<GradeResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const startedAt = useRef(0);
@@ -41,13 +43,11 @@ export default function DrillPage() {
     setResult(null);
     setInputs({});
     try {
-      const res = await fetch("/api/lbo-drill", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "new", difficulty, industry: industry === "Random" ? INDUSTRIES[Math.floor(Math.random() * INDUSTRIES.length)] : industry }),
+      const json = await postJson<{ drill: { id: string; scenario: LboScenario } }>("/api/lbo-drill", {
+        action: "new",
+        difficulty,
+        industry: industry === "Random" ? INDUSTRIES[Math.floor(Math.random() * INDUSTRIES.length)] : industry,
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed");
       setDrillId(json.drill.id);
       setScenario(json.drill.scenario);
       setRemaining(DRILL_TIME);
@@ -69,18 +69,12 @@ export default function DrillPage() {
     try {
       const submitted: Record<string, number> = {};
       for (const f of CHECKED_FIELDS) submitted[f.key] = Number(inputs[f.key]);
-      const res = await fetch("/api/lbo-drill", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "grade",
-          id: drillId,
-          submitted,
-          timeTakenSec: Math.round((Date.now() - startedAt.current) / 1000),
-        }),
+      const json = await postJson<GradeResponse>("/api/lbo-drill", {
+        action: "grade",
+        id: drillId,
+        submitted,
+        timeTakenSec: Math.round((Date.now() - startedAt.current) / 1000),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Grade failed");
       setResult(json);
       setPhase("done");
     } catch (e) {

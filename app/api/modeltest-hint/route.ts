@@ -5,7 +5,7 @@ import { buildHintMessages } from "@/lib/modeltest/prompts";
 import type { CaseStructured, ReferenceSolution } from "@/lib/modeltest/types";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function POST(req: Request) {
   try {

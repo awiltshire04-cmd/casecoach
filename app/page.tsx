@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { browserClient } from "@/lib/supabase";
 import { setActiveCase } from "@/lib/session";
+import { postJson } from "@/lib/http";
 import {
   CASE_TYPES,
   INDUSTRIES,
@@ -73,14 +74,11 @@ export default function LibraryPage() {
     setBusy(true);
     setErr(null);
     try {
-      const res = await fetch("/api/generate-case", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...f, firm_flavor: f.firm_flavor || null }),
+      const json = await postJson<{ case: CaseRow }>("/api/generate-case", {
+        ...f,
+        firm_flavor: f.firm_flavor || null,
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Generation failed");
-      setActiveCase(json.case as CaseRow);
+      setActiveCase(json.case);
       router.push("/practice");
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Generation failed");
