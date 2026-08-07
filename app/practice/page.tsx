@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { getActiveCase } from "@/lib/session";
 import { postJson } from "@/lib/http";
 import { ExhibitTable, ScoreReadout, fmtTime } from "@/components/Pieces";
@@ -18,6 +19,7 @@ export default function PracticePage() {
   const [result, setResult] = useState<(GradeResult & { attemptId: string }) | null>(null);
   const [exemplar, setExemplar] = useState<string | null>(null);
   const [gaps, setGaps] = useState<string[] | null>(null);
+  const [takeaways, setTakeaways] = useState<{ theme: string; text: string }[]>([]);
   const [loadingExemplar, setLoadingExemplar] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const startedAt = useRef<number>(0);
@@ -65,6 +67,7 @@ export default function PracticePage() {
           feedback: { dimensions: Record<string, string>; tests_callouts: { title: string; body: string }[] };
         };
         total: number;
+        takeaways?: { theme: string; text: string }[];
       }>("/api/grade-attempt", {
         caseId: c.id,
         response,
@@ -72,6 +75,7 @@ export default function PracticePage() {
         timeAllottedSec: c.suggested_time_sec,
         timeTakenSec: Math.max(1, timeTaken),
       });
+      setTakeaways(json.takeaways ?? []);
       setResult({
         attemptId: json.attempt.id,
         total: json.total,
@@ -237,6 +241,29 @@ export default function PracticePage() {
               </span>
             </div>
           </div>
+
+          {takeaways.length > 0 && (
+            <div className="card stack">
+              <div className="section-head" style={{ marginBottom: 0 }}>
+                <h3>Takeaways</h3>
+                <span className="sub">Worth writing down — these generalise past this case</span>
+                <div className="spacer" />
+                <Link href="/cases/review" className="sub no-print">
+                  Review sheet →
+                </Link>
+              </div>
+              <ul className="takeaway-list compact">
+                {takeaways.map((t, i) => (
+                  <li key={i}>
+                    <span className="tk-text">{t.text}</span>
+                    <span className="tk-meta">
+                      <span className="chip">{t.theme}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <div className="split">
             <div className="card stack">

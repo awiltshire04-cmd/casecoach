@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { Logo } from "@/components/Logo";
 
 // Top bar built around the app's sections rather than one flat list of tools.
 // Case-prep tools group under a single menu so Behavioral and Technical read as
@@ -14,6 +15,7 @@ const NAV: { href: string; label: string }[] = [
 
 const CASE_PREP: { href: string; label: string; desc: string }[] = [
   { href: "/cases", label: "Case Practice", desc: "Generate and attempt a timed case" },
+  { href: "/cases/review", label: "Review Sheet", desc: "Every takeaway you've collected" },
   { href: "/drill", label: "Paper LBO", desc: "Four-minute returns drills" },
   { href: "/modeltest", label: "Model Test", desc: "Timed LBO modelling in Excel" },
   { href: "/concepts", label: "Concepts", desc: "Reference for modelling mechanics" },
@@ -54,7 +56,10 @@ export function Nav() {
     <header className="topnav">
       <div className="topnav-inner">
         <Link href="/" className="brand">
-          <span className="dot" /> CaseCoach
+          <span className="mark">
+            <Logo />
+          </span>
+          CaseCoach
         </Link>
 
         <button
@@ -84,8 +89,9 @@ export function Nav() {
             </button>
             {menuOpen && (
               <div className="navmenu" role="menu">
+                {/* exact match: /cases and /cases/review are siblings, not parent and child */}
                 {CASE_PREP.map((c) => (
-                  <Link key={c.href} href={c.href} className={path.startsWith(c.href) ? "active" : ""} role="menuitem">
+                  <Link key={c.href} href={c.href} className={path === c.href ? "active" : ""} role="menuitem">
                     {c.label}
                     <span className="d">{c.desc}</span>
                   </Link>

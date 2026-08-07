@@ -35,9 +35,15 @@ export async function POST(req: Request) {
       rubric: c.rubric,
       hiddenTraps: c.hidden_traps ?? [],
       response: body.response,
+      defensiblePositions: c.defensible_positions ?? [],
     });
 
-    const graded = await jsonCall<Omit<GradeResult, "total"> & { missed_traps?: string[] }>({
+    const graded = await jsonCall<
+      Omit<GradeResult, "total"> & {
+        missed_traps?: string[];
+        takeaways?: { theme: string; text: string }[];
+      }
+    >({
       model: MODELS.grade,
       system,
       user,
@@ -67,7 +73,30 @@ export async function POST(req: Request) {
       .single();
     if (aErr) throw aErr;
 
-    return NextResponse.json({ attempt, total });
+    // Takeaways feed the review sheet. A failure here must not cost the user
+    // their graded attempt, so it's best-effort and reported alongside.
+    const takeaways = (graded.takeaways ?? [])
+      .filter((t) => t?.text?.trim())
+      .slice(0, 6)
+      .map((t) => ({
+        case_id: body.caseId,
+        attempt_id: attempt.id,
+        theme: (t.theme ?? "General").trim(),
+        text: t.text.trim(),
+      }));
+
+    let takeawaysSaved = 0;
+    if (takeaways.length) {
+      const { error: tErr } = await supa.from("case_takeaways").insert(takeaways);
+      if (!tErr) takeawaysSaved = takeaways.length;
+    }
+
+    return NextResponse.json({
+      attempt,
+      total,
+      takeaways: graded.takeaways ?? [],
+      takeawaysSaved,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Grading failed";
     return NextResponse.json({ error: message }, { status: 500 });

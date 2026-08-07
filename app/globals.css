@@ -587,3 +587,33 @@ table.data tr.clickable { cursor: pointer; }
 /* ---- study mode ---- */
 .studycard { border-left: 3px solid var(--warn); }
 .studycard .qprompt { font-size: var(--t-lg); }
+
+/* ---- brand mark ---- */
+.topnav .brand .mark { display: inline-flex; color: var(--accent); line-height: 0; }
+
+/* ---- traps grid: full width under the archive chart ---- */
+.trapgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 0 var(--s5); }
+@media (max-width: 760px) { .trapgrid { grid-template-columns: 1fr; } }
+
+/* ---- takeaways / review sheet ---- */
+.takeaway-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; }
+.takeaway-list li {
+  padding: 0.8rem 0; border-bottom: 1px solid var(--line-2);
+  display: flex; flex-direction: column; gap: 0.4rem;
+}
+.takeaway-list li:last-child { border-bottom: none; }
+.takeaway-list .tk-text {
+  font-size: var(--t-md); color: var(--ink); line-height: 1.6;
+  padding-left: 1.1rem; position: relative;
+}
+.takeaway-list .tk-text::before {
+  content: ""; position: absolute; left: 0; top: 0.62em;
+  width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
+}
+.takeaway-list .tk-meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem;
+  padding-left: 1.1rem; font-size: var(--t-xs); color: var(--faint);
+}
+.takeaway-list .tk-case { font-weight: 600; color: var(--muted); }
+.takeaway-list .tk-case:hover { color: var(--accent); opacity: 1; }
+.takeaway-list.compact li { padding: 0.55rem 0; }

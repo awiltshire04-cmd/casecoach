@@ -29,19 +29,46 @@ export function textOf(msg: Anthropic.Message): string {
     .trim();
 }
 
+/** Extract the first complete top-level JSON object by matching braces, ignoring
+ *  braces inside string literals. Slicing to the LAST `}` breaks whenever the
+ *  model appends a second block or trailing prose containing a brace. */
+function firstJsonObject(s: string): string | null {
+  const start = s.indexOf("{");
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return s.slice(start, i + 1);
+    }
+  }
+  return null; // truncated mid-object
+}
+
 // Strip accidental markdown fences and parse. Throws on failure so callers can retry.
 export function parseJson<T>(raw: string): T {
   let s = raw.trim();
   if (s.startsWith("```")) {
     s = s.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
   }
-  // Salvage: grab the outermost JSON object if there's stray prose.
-  const first = s.indexOf("{");
-  const last = s.lastIndexOf("}");
-  if (first > 0 || last < s.length - 1) {
-    if (first !== -1 && last !== -1 && last > first) s = s.slice(first, last + 1);
+  try {
+    return JSON.parse(s) as T;
+  } catch {
+    const salvaged = firstJsonObject(s);
+    if (!salvaged) throw new Error("No complete JSON object in model output (likely truncated).");
+    return JSON.parse(salvaged) as T;
   }
-  return JSON.parse(s) as T;
 }
 
 // One-shot JSON call with a single malformed-output retry.

@@ -188,8 +188,8 @@ export default function ArchivePage() {
         <div className="empty">No attempts yet. Complete a case to populate your archive.</div>
       ) : (
         <div className="stack">
-         <div className="split-3">
-          {/* chart */}
+          {/* Chart takes the full column width — it was previously sharing the
+              row with the trap panel, which squeezed the plot area. */}
           <div className="card stack">
             <div className="row wrap">
               <h3>Score history</h3>
@@ -235,15 +235,21 @@ export default function ArchivePage() {
             </div>
           </div>
 
-          {/* right column: traps you keep missing */}
+          {/* Full width, below the chart. Long trap text reads badly in a
+              narrow column, so it wraps across a responsive grid instead. */}
           <div className="card stack">
-            <h3>Traps you keep missing</h3>
+            <div className="section-head" style={{ marginBottom: 0 }}>
+              <h3>Insights you keep missing</h3>
+              {missedTraps.length > 0 && (
+                <span className="sub">New cases of these types are nudged to re-test them</span>
+              )}
+            </div>
             {missedTraps.length === 0 ? (
-              <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: 0 }}>
-                Nothing recurring yet. Missed insights from graded cases surface here and get re-tested in new cases.
+              <p style={{ fontSize: "var(--t-base)", color: "var(--muted)", margin: 0 }}>
+                Nothing recurring yet. Insights you miss on graded cases surface here and get re-tested later.
               </p>
             ) : (
-              <div>
+              <div className="trapgrid">
                 {missedTraps.map((t, i) => (
                   <div className="trap" key={i}>
                     <span className="count">{t.times_missed}×</span>
@@ -253,13 +259,9 @@ export default function ArchivePage() {
                     </span>
                   </div>
                 ))}
-                <p style={{ fontSize: "0.76rem", color: "var(--faint)", marginTop: "0.6rem" }}>
-                  New cases of these types are nudged to re-test these.
-                </p>
               </div>
             )}
           </div>
-         </div>
 
           {/* insights (full width) */}
           <div className="card stack">
