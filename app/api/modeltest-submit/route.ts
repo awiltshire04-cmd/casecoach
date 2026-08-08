@@ -3,8 +3,9 @@ import { jsonCall, MODELS } from "@/lib/anthropic";
 import { serviceClient } from "@/lib/supabase";
 import { parseWorkbook, extractCheckpoints, staticAnalysis, formulaSample } from "@/lib/modeltest/extract";
 import { buildFormulaReviewMessages, buildWriteupMessages } from "@/lib/modeltest/prompts";
+import { auditWorkbook, type AuditOutcome } from "@/lib/modeltest/audit";
 import {
-  TEST_TIME_BENCH, WRITEUP_DIMENSIONS,
+  GRADE_WEIGHTS, TEST_TIME_BENCH, WRITEUP_DIMENSIONS,
   type CaseStructured, type GenerateTestParams, type GradeBreakdown, type ReferenceSolution, type TestDifficulty,
 } from "@/lib/modeltest/types";
 
@@ -44,7 +45,7 @@ export async function POST(req: Request) {
 
     const { data: test, error: tErr } = await supa
       .from("model_tests")
-      .select("params, case_structured, reference_solution")
+      .select("params, case_structured, reference_solution, conventions")
       .eq("id", testId)
       .single();
     if (tErr || !test) return NextResponse.json({ error: "Test not found." }, { status: 404 });
@@ -77,15 +78,37 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `Could not parse workbook: ${msg}` }, { status: 400 });
     }
 
-    // A: outputs vs reference key
-    const checks = extractCheckpoints(pw, solution);
-    const weightOf = (label: string) => (label === "IRR" || label === "MoM" ? 2 : 1);
-    const wTotal = checks.reduce((a, c) => a + weightOf(c.label), 0);
-    const wPass = checks.reduce((a, c) => a + (c.pass ? weightOf(c.label) : 0), 0);
-    const outputsScore = Math.round((wPass / Math.max(1, wTotal)) * 100);
-
-    // B: static structure analysis
+    // Deterministic hygiene first — it's cheap, objective, and becomes evidence
+    // the auditor reasons from rather than a separate score.
     const sa = staticAnalysis(pw);
+    // ---- holistic audit: the model reads the workbook, code scores it ----
+    let audit: AuditOutcome | null = null;
+    let auditError: string | null = null;
+    try {
+      audit = await auditWorkbook({
+        pw,
+        sa,
+        c: structured,
+        sol: solution,
+        concepts: params.concepts,
+        conventions: (test.conventions as string[] | null) ?? structured.conventions ?? [],
+      });
+    } catch (e) {
+      auditError = e instanceof Error ? e.message : "audit failed";
+    }
+
+    // Fallback keeps grading alive if the audit call fails: the old label-matched
+    // extraction, which is rigid but deterministic and needs no model.
+    const checks = audit ? audit.outputs.checks : extractCheckpoints(pw, solution);
+    const outputsScore = audit
+      ? audit.outputs.score
+      : (() => {
+          const w = (l: string) => (l === "IRR" || l === "MoM" ? 2 : 1);
+          const t = checks.reduce((a, c) => a + w(c.label), 0);
+          const p = checks.reduce((a, c) => a + (c.pass ? w(c.label) : 0), 0);
+          return Math.round((p / Math.max(1, t)) * 100);
+        })();
+
     let structureScore = 100;
     if (!sa.irr_is_formula) structureScore -= 25;
     else if (!sa.irr_inputs_are_formulas) structureScore -= 15;
@@ -150,7 +173,25 @@ export async function POST(req: Request) {
           ? "Inside the benchmark."
           : `Over the ${Math.round(bench / 60)}-minute benchmark — in a live test this costs polish time on the memo.`;
 
-    const total = Math.round(0.45 * outputsScore + 0.2 * structureScore + 0.2 * conceptScore + 0.15 * writeupScore);
+    // Mechanics and integrity come from the audit. Without it (fallback path)
+    // the deterministic structure score stands in for integrity so the total
+    // stays on the same 0-100 scale rather than silently losing 45 points.
+    const mechanicsScore = audit ? audit.mechanics.score : structureScore;
+    const integrityScore = audit ? audit.integrity.score : structureScore;
+
+    const total = Math.round(
+      GRADE_WEIGHTS.outputs * outputsScore +
+        GRADE_WEIGHTS.mechanics * mechanicsScore +
+        GRADE_WEIGHTS.integrity * integrityScore +
+        GRADE_WEIGHTS.concepts * conceptScore +
+        GRADE_WEIGHTS.writeup * writeupScore
+    );
+
+    if (auditError) {
+      sa.notes.push(
+        `Holistic audit unavailable (${auditError}) — this attempt fell back to label-matched output checking, which misses outputs that aren't labelled exactly as the key expects.`
+      );
+    }
 
     const grade: GradeBreakdown = {
       outputs: { checks, score: outputsScore },
@@ -159,6 +200,22 @@ export async function POST(req: Request) {
       writeup: { dimension_scores: writeupDims, feedback: writeupFb, score: writeupScore },
       speed: { time_taken_sec: timeTakenSec, benchmark_sec: bench, context: speedContext },
       total,
+      ...(audit
+        ? {
+            mechanics: audit.mechanics,
+            integrity: audit.integrity,
+            narrative: audit.narrative,
+            audit_meta: { ...audit.meta, fell_back: false },
+          }
+        : {
+            audit_meta: {
+              mode: "full" as const,
+              cells: pw.cells.length,
+              formulas: pw.cells.filter((c) => c.f).length,
+              invalid_citations: 0,
+              fell_back: true,
+            },
+          }),
     };
 
     const { error: upErr } = await supa

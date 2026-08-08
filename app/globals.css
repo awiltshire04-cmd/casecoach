@@ -588,6 +588,17 @@ table.data tr.clickable { cursor: pointer; }
 .studycard { border-left: 3px solid var(--warn); }
 .studycard .qprompt { font-size: var(--t-lg); }
 
+/* ---- model audit: cell citations ---- */
+.cellrefs { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.4rem; }
+.cellref {
+  font-family: var(--mono); font-size: var(--t-xs); color: var(--muted);
+  background: var(--line-2); border-radius: var(--radius-xs); padding: 0.1rem 0.4rem;
+}
+.cellref.bad { background: var(--bad-wash); color: var(--bad); }
+.fb-list.ordered { list-style: decimal; padding-left: 1.1rem; }
+.fb-list.ordered li { padding-left: 0.2rem; }
+.fb-list.ordered li::before { content: none; }
+
 /* ---- brand mark ---- */
 .topnav .brand .mark { display: inline-flex; color: var(--accent); line-height: 0; }
 

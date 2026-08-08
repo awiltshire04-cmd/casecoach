@@ -136,6 +136,103 @@ Return JSON exactly: {"concepts":[{"key":string,"verdict":"correct"|"partial"|"i
   return { system, user };
 }
 
+// ---------------------------------------------------------------------------
+// Holistic model audit. Replaces label-matched cell checking.
+//
+// Division of labour: the model LOCATES and JUDGES STRUCTURE; code does the
+// arithmetic. Language models read spreadsheet logic well and compare numbers
+// badly, so it reports where each output lives and we do the tolerance check
+// ourselves against the solver's reference.
+// ---------------------------------------------------------------------------
+export function buildModelAuditMessages(args: {
+  c: CaseStructured;
+  sol: ReferenceSolution;
+  concepts: string[];
+  conventions: string[];
+  workbook: string;
+  workbookMode: "full" | "digest";
+  staticNotes: string[];
+  hardcodeRatio: number;
+  iterativeCalc: boolean | null;
+}) {
+  const s = args.sol;
+  const conceptDefs = TOGGLES.filter((t) => args.concepts.includes(t.key))
+    .map((t) => `- ${t.key}: ${t.desc}`)
+    .join("\n");
+
+  const yearTable = s.years
+    .map(
+      (y) =>
+        `  Y${y.year}: rev ${y.revenue} | EBITDA ${y.ebitda} | D&A ${y.da} | int exp ${y.interest_expense} | taxes ${y.taxes} | NI ${y.net_income} | capex ${y.capex} | ΔNWC ${y.delta_nwc} | FCF ${y.fcf_before_sweep} | cash ${y.cash} | debt ${Object.entries(
+          y.tranche_balances
+        )
+          .map(([k, v]) => `${k} ${Math.round(v * 10) / 10}`)
+          .join(", ")}`
+    )
+    .join("\n");
+
+  const system = [
+    "You are a senior PE associate reviewing a candidate's LBO modelling test in Excel. You have the full workbook — every formula and its last-saved value — and the correct reference model.",
+    "Review it the way a real reviewer does: trace the logic, follow the links, and judge whether the model is BUILT correctly. A model can produce the right IRR from typed-in numbers and still be worthless; a model can have a small arithmetic slip and still be excellently constructed. Say which you are looking at.",
+    "The candidate was NOT told where to put anything. Never penalise layout, sheet names, row labels or ordering. Find what they built, wherever they built it.",
+    "EVERY claim must cite at least one real cell copied exactly from the workbook below, written as `Sheet!Address` (e.g. Sheet1!H314). When you mean a whole schedule row, cite a populated cell on that row — not a bare row number. Do not invent references. If you cannot find something, say so with verdict 'missing' rather than guessing.",
+    "Return ONLY valid minified JSON, no prose, no markdown fences.",
+  ].join(" ");
+
+  const user = `THE TEST
+Company: ${args.c.company} (${args.c.industry}). Close at 12/31/${args.c.transaction_year}, ${args.c.hold_years}-year hold.
+Interest basis: ${args.c.entry.interest_basis}${args.c.entry.interest_basis === "average" ? " (circular — iterative calculation required)" : ""}.
+Concepts under test:
+${conceptDefs}
+
+STATED CONVENTIONS the candidate was given:
+${args.conventions.map((c) => `- ${c}`).join("\n")}
+
+REFERENCE MODEL (correct answer, computed deterministically — the candidate never saw it):
+Entry: adjusted EBITDA ${s.entry.entry_ebitda}, EV ${s.entry.entry_ev}, total debt ${s.entry.total_debt}, financing fees ${s.entry.fin_fees}, sponsor equity ${s.entry.sponsor_equity}
+Per year:
+${yearTable}
+Exit (year ${s.exit.exit_year}): EBITDA ${s.exit.exit_ebitda}, EV ${s.exit.exit_ev}, net debt ${s.exit.net_debt}, equity ${s.exit.equity_value}
+Returns: ${s.returns.primary_label} IRR ${(s.returns.irr * 100).toFixed(1)}%, MoM ${s.returns.mom}x
+
+OUTPUTS TO LOCATE (find each one wherever the candidate put it):
+${s.checkpoints.map((cp) => `- "${cp.label}" (${cp.kind}${cp.kind === "pct" ? ", report as a percentage e.g. 20.3 not 0.203" : ""})`).join("\n")}
+
+DETERMINISTIC SIGNALS already measured (treat as evidence, not conclusions):
+- Hardcoded-number ratio: ${(args.hardcodeRatio * 100).toFixed(0)}% (a clean test model runs ~20-25%, assumptions only)
+- Iterative calculation: ${args.iterativeCalc === null ? "unknown" : args.iterativeCalc ? "enabled" : "disabled"}
+${args.staticNotes.map((n) => `- ${n}`).join("\n")}
+
+${args.workbookMode === "digest" ? "NOTE: this workbook was too large to include whole. You are seeing distinct formula shapes plus every row containing returns/debt/cash-flow keywords.\n" : ""}THE CANDIDATE'S WORKBOOK
+${args.workbook}
+
+---
+Produce three things.
+
+1. outputs — for EACH label in the list above, the cell holding it and the value shown there. Search hard: the label may be worded differently, abbreviated, or in a summary block. Set ref to null and value to null ONLY if it genuinely is not in the workbook. Report the value as displayed (converted to percentage points for pct metrics). Do not judge correctness — that is checked separately.
+
+2. mechanics — audit how the model is BUILT. Cover each of these areas that applies, one entry each:
+   - "EBITDA build": do the revenue drivers and cost lines flow into EBITDA correctly?
+   - "Working capital": are the balance-sheet drivers wired to the cash flow with the right sign?
+   - "Debt schedule": beginning balance → paydown/draw → ending balance, linked year to year, per tranche?
+   - "Cash sweep": ordered by seniority, respecting minimum cash, and excluding tranches that are never swept?
+   - "Interest": computed on the stated basis, on the right balances, flowing to the income statement?
+   - "Circularity": if interest is on average balances, is the circular reference actually resolved (iterative calc on) rather than broken or hardcoded?
+   - "Returns": is IRR/MoM computed from a linked cash-flow series, including the correct entry equity outflow sign and exit proceeds?
+   - "Balance sheet": does it balance, and is there a live check?
+   - One entry per concept under test that has its own mechanic (${args.concepts.join(", ")}).
+   For each: verdict correct | partial | incorrect | missing, the cells you traced, and a note naming the specific defect and its consequence. Where a number is wrong, say WHERE the logic diverges, not just that it differs.
+
+3. integrity — model hygiene a reviewer would flag: hardcoded values where a formula belongs (cite them), broken or error cells, inconsistent sign conventions, plugs, formulas that break across a row, links to nothing. Same verdict/cells/note shape.
+
+Then a short narrative: what is genuinely good, and the ordered list of fixes that matter most.
+
+Return JSON exactly:
+{"outputs":[{"label":string,"ref":string|null,"value":number|null,"note":string}],"mechanics":[{"area":string,"verdict":"correct"|"partial"|"incorrect"|"missing","cells":[string],"note":string}],"integrity":[{"area":string,"verdict":"correct"|"partial"|"incorrect"|"missing","cells":[string],"note":string}],"summary":string,"strengths":[string],"fixes":[string]}`;
+
+  return { system, user };
+}
+
 export function buildWriteupMessages(args: {
   writeup: string;
   sol: ReferenceSolution;

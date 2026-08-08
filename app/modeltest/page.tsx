@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { INDUSTRIES } from "@/lib/types";
 import { apiFetch, postJson } from "@/lib/http";
+import { ModelAudit } from "@/components/ModelAudit";
 import { TOGGLES, TEST_TIME_BENCH, type GradeBreakdown, type TestDifficulty } from "@/lib/modeltest/types";
 
 type Phase = "setup" | "generating" | "run" | "grading" | "graded";
@@ -345,10 +346,11 @@ export default function ModelTestPage() {
           <div className="mono" style={{ fontSize: "2.4rem", color: "var(--blue)" }}>{g.total}</div>
         </div>
         {[
-          ["Outputs (45%)", g.outputs.score],
-          ["Structure (20%)", g.structure.score],
-          ["Concepts (20%)", Math.round(g.concepts.reduce((a, c) => a + ({ correct: 100, partial: 60, incorrect: 20, not_found: 0 } as Record<string, number>)[c.verdict], 0) / Math.max(1, g.concepts.length))],
-          ["Write-up (15%)", g.writeup.score],
+          ["Outputs (30%)", g.outputs.score],
+          ...(g.mechanics ? [["Mechanics (30%)", g.mechanics.score] as [string, number]] : []),
+          ...(g.integrity ? [["Integrity (15%)", g.integrity.score] as [string, number]] : []),
+          ["Concepts (15%)", Math.round(g.concepts.reduce((a, c) => a + ({ correct: 100, partial: 60, incorrect: 20, not_found: 0 } as Record<string, number>)[c.verdict], 0) / Math.max(1, g.concepts.length))],
+          ["Write-up (10%)", g.writeup.score],
         ].map(([k, v]) => (
           <div key={String(k)}>
             <div className="eyebrow">{k}</div>
@@ -362,22 +364,25 @@ export default function ModelTestPage() {
         </div>
       </div>
 
+      <ModelAudit g={g} />
+
       <div className="card">
-        <h3>Outputs vs. reference key</h3>
+        <h3>Outputs vs. reference</h3>
         <table className="check-table">
-          <thead><tr><th>Checkpoint</th><th>Reference</th><th>Your model</th><th></th></tr></thead>
+          <thead><tr><th>Output</th><th>Reference</th><th>Your model</th><th>Found at</th><th></th></tr></thead>
           <tbody>
             {g.outputs.checks.map((c) => (
               <tr key={c.label} className={c.pass ? "pass" : "fail"}>
                 <td>{c.label}</td>
                 <td className="mono">{c.expected}{c.kind === "pct" ? "%" : c.kind === "mult" ? "x" : ""}</td>
                 <td className="mono">{c.found == null ? "not found" : `${c.found}${c.kind === "pct" ? "%" : c.kind === "mult" ? "x" : ""}`}</td>
+                <td className="mono sub">{c.ref ?? "—"}</td>
                 <td className="mono">{c.pass ? "✓" : "✗"}</td>
               </tr>
             ))}
           </tbody>
         </table>
-        <p className="sub">A wrong intermediate with a right final answer usually means offsetting errors — check the first failed checkpoint top-down.</p>
+        <p className="sub">Outputs are located wherever you put them — layout and labels are never graded. A wrong intermediate with a right final answer usually means offsetting errors; work top-down from the first miss.</p>
       </div>
 
       <div className="mt-split">

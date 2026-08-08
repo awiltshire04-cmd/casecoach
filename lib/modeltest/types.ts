@@ -200,10 +200,29 @@ export interface ReferenceSolution {
 // ---------------------------------------------------------------------------
 // Grading shapes
 // ---------------------------------------------------------------------------
-export interface OutputCheck { label: string; expected: number; found: number | null; pass: boolean; kind: string }
+export interface OutputCheck {
+  label: string; expected: number; found: number | null; pass: boolean; kind: string;
+  /** Where the auditor found it, e.g. "Returns!D14". Absent on pre-audit attempts. */
+  ref?: string | null;
+  /** True when `ref` resolves to a real cell — guards against invented citations. */
+  ref_valid?: boolean;
+  note?: string;
+}
+
+export type Verdict = "correct" | "partial" | "incorrect" | "missing";
+
+/** One reviewer observation about how the model is built, tied to real cells. */
+export interface ModelFinding {
+  area: string;                 // "Debt schedule", "Circularity", "Sign conventions"…
+  verdict: Verdict;
+  cells: string[];              // sheet!cell citations
+  note: string;
+  cells_valid?: boolean;        // all citations resolved
+}
+
 export interface GradeBreakdown {
-  outputs: { checks: OutputCheck[]; score: number };          // vs reference key
-  structure: {                                                 // static formula analysis
+  outputs: { checks: OutputCheck[]; score: number };          // located, then compared in code
+  structure: {                                                 // deterministic formula analysis
     formula_cells: number; hardcoded_numeric: number; hardcode_ratio: number;
     error_cells: string[]; irr_is_formula: boolean; irr_inputs_are_formulas: boolean;
     iterative_calc_enabled: boolean | null; balance_check_found: boolean;
@@ -213,7 +232,35 @@ export interface GradeBreakdown {
   writeup: { dimension_scores: Record<string, number>; feedback: Record<string, string>; score: number };
   speed: { time_taken_sec: number; benchmark_sec: number; context: string };
   total: number;
+
+  // ---- added by the holistic audit; absent on attempts graded before it ----
+  mechanics?: { findings: ModelFinding[]; score: number };
+  integrity?: { findings: ModelFinding[]; score: number };
+  narrative?: { summary: string; strengths: string[]; fixes: string[] };
+  audit_meta?: {
+    mode: "full" | "digest";     // whether the whole workbook was sent
+    cells: number; formulas: number;
+    invalid_citations: number;   // findings pointing at cells that don't exist
+    fell_back: boolean;          // audit failed; legacy label-matching was used
+  };
 }
+
+/** Holistic weighting: building it right counts for more than landing a number
+ *  in the right place, which is the opposite of the old cell-checklist. */
+export const GRADE_WEIGHTS = {
+  outputs: 0.30,
+  mechanics: 0.30,
+  integrity: 0.15,
+  concepts: 0.15,
+  writeup: 0.10,
+} as const;
+
+export const VERDICT_POINTS: Record<Verdict, number> = {
+  correct: 100,
+  partial: 60,
+  incorrect: 20,
+  missing: 0,
+};
 
 export const TEST_TIME_BENCH: Record<TestDifficulty, number> = {
   level3: 90 * 60,

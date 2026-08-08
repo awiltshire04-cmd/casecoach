@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/http";
+import { ModelAudit } from "@/components/ModelAudit";
 import { TOGGLES, type GradeBreakdown } from "@/lib/modeltest/types";
 
 interface Loaded {
@@ -85,11 +86,14 @@ export default function ModelTestDetail() {
             <div className="eyebrow">Total</div>
             <div className="mono" style={{ fontSize: "2.2rem" }}>{g.total}</div>
           </div>
-          {[
+          {([
             ["Outputs", g.outputs.score],
-            ["Structure", g.structure.score],
+            ...(g.mechanics ? [["Mechanics", g.mechanics.score] as [string, number]] : []),
+            ...(g.integrity ? [["Integrity", g.integrity.score] as [string, number]] : []),
+            // Pre-audit attempts scored structure directly; newer ones fold it into integrity.
+            ...(g.mechanics ? [] : [["Structure", g.structure.score] as [string, number]]),
             ["Write-Up", g.writeup.score],
-          ].map(([k, v]) => (
+          ] as [string, number][]).map(([k, v]) => (
             <div key={String(k)}>
               <div className="eyebrow">{k}</div>
               <div className="mono" style={{ fontSize: "1.4rem" }}>{v}</div>
@@ -98,17 +102,20 @@ export default function ModelTestDetail() {
         </div>
       )}
 
+      {g && <ModelAudit g={g} />}
+
       {g && (
         <div className="card no-print">
-          <h3>Outputs vs. Reference Key</h3>
+          <h3>Outputs vs. Reference</h3>
           <table className="check-table">
-            <thead><tr><th>Checkpoint</th><th>Reference</th><th>Your Model</th><th></th></tr></thead>
+            <thead><tr><th>Output</th><th>Reference</th><th>Your Model</th><th>Found at</th><th></th></tr></thead>
             <tbody>
               {g.outputs.checks.map((c) => (
                 <tr key={c.label} className={c.pass ? "pass" : "fail"}>
                   <td>{c.label}</td>
                   <td className="mono">{c.expected}{c.kind === "pct" ? "%" : c.kind === "mult" ? "x" : ""}</td>
                   <td className="mono">{c.found == null ? "not found" : `${c.found}${c.kind === "pct" ? "%" : c.kind === "mult" ? "x" : ""}`}</td>
+                  <td className="mono sub">{c.ref ?? "—"}</td>
                   <td className="mono">{c.pass ? "✓" : "✗"}</td>
                 </tr>
               ))}
