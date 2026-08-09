@@ -16,6 +16,7 @@ export function BankView({
   interviewBlurb,
   seedable = false,
   studyHref,
+  flashcardsHref,
 }: {
   section: Section;
   categories: { key: string; label: string; blurb: string }[];
@@ -25,6 +26,7 @@ export function BankView({
   interviewBlurb: string;
   seedable?: boolean;
   studyHref?: string;
+  flashcardsHref?: string;
 }) {
   const router = useRouter();
   const [questions, setQuestions] = useState<Question[] | null>(null);
@@ -140,11 +142,18 @@ export function BankView({
           <h1>{title}</h1>
           <p className="sub">{blurb}</p>
         </div>
-        {studyHref && flaggedCount > 0 && (
-          <Link href={studyHref}>
-            <button className="accent">Study {flaggedCount} flagged →</button>
-          </Link>
-        )}
+        <div className="row wrap no-print">
+          {flashcardsHref && !empty && (
+            <Link href={flashcardsHref}>
+              <button>Flashcards</button>
+            </Link>
+          )}
+          {studyHref && flaggedCount > 0 && (
+            <Link href={studyHref}>
+              <button className="accent">Study {flaggedCount} flagged →</button>
+            </Link>
+          )}
+        </div>
       </div>
 
       {setupMsg && (

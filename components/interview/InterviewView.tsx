@@ -1,10 +1,9 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/http";
 import { scoreClass } from "@/components/Pieces";
 import { VoiceAnswer, type VoiceAnswerHandle } from "@/components/VoiceAnswer";
-import { AnswerGrade } from "@/components/AnswerGrade";
 import { FlagControl } from "@/components/interview/FlagControl";
 import {
   rubricFor,
@@ -12,20 +11,28 @@ import {
   type Question,
   type Section,
   type SessionOverall,
-  type SpeechMetrics,
 } from "@/lib/interview/types";
 
-interface Graded {
+interface Deferred {
   attemptId: string;
-  score: number;
-  breakdown: Record<string, number>;
-  dimensionNotes: Record<string, string>;
-  feedback: AnswerFeedback | null;
-  metrics: SpeechMetrics | null;
-  followup: { asked: boolean; reason: string; question: string | null };
+  deferred: true;
+  followup: { asked: boolean; reason: string; question: string | null } | null;
 }
 
-type Phase = "answering" | "followup" | "reviewing" | "finishing" | "done";
+export interface PerQuestion {
+  id: string;
+  questionId: string;
+  ordinal: number | null;
+  prompt: string;
+  category: string;
+  score: number;
+  breakdown: Record<string, number>;
+  feedback: (AnswerFeedback & { dimension_notes?: Record<string, string> }) | null;
+  followupAsked: boolean;
+  followupQuestion: string | null;
+}
+
+type Phase = "answering" | "followup" | "finishing" | "done";
 
 const KEY = (id: string) => `casecoach:interview:${id}`;
 
@@ -47,11 +54,16 @@ export function InterviewView({
   const [questions, setQuestions] = useState<Question[] | null>(null);
   const [idx, setIdx] = useState(0);
   const [phase, setPhase] = useState<Phase>("answering");
-  const [graded, setGraded] = useState<Graded | null>(null);
+  const [followup, setFollowup] = useState<Deferred["followup"]>(null);
+  const [lastAttemptId, setLastAttemptId] = useState<string | null>(null);
   const [scores, setScores] = useState<number[]>([]);
+  const [gradedCount, setGradedCount] = useState(0);
+  const [perQuestion, setPerQuestion] = useState<PerQuestion[]>([]);
   const [overall, setOverall] = useState<SessionOverall | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  /** In-flight background grade requests, awaited once at the end. */
+  const pending = useRef<Promise<unknown>[]>([]);
 
   // The question list comes back once, at session start. Keep it locally so a
   // refresh mid-interview doesn't lose the run.
@@ -100,7 +112,9 @@ export function InterviewView({
     setSubmitting(true);
     setErr(null);
     try {
-      const res = await apiFetch<Graded>("/api/interview/attempt", {
+      // Fast path: store the answer and decide the probe (~3s). The full grade
+      // is fired below without awaiting, so it never blocks the next question.
+      const res = await apiFetch<Deferred>("/api/interview/attempt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -111,58 +125,86 @@ export function InterviewView({
           sessionId: id,
           ordinal: idx + 1,
           allowFollowUp: true,
+          defer: true,
         }),
       });
-      setGraded(res);
-      const next = [...scores, res.score];
-      setScores(next);
-      if (questions) persist(questions, idx, next);
-      setPhase(res.followup?.asked && res.followup.question ? "followup" : "reviewing");
-      window.scrollTo({ top: 0, behavior: "smooth" });
+
+      setLastAttemptId(res.attemptId);
+      setFollowup(res.followup ?? null);
+
+      const p = apiFetch("/api/interview/grade", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ attemptId: res.attemptId }),
+      })
+        .then(() => setGradedCount((n) => n + 1))
+        .catch(() => {
+          /* surfaced at the debrief as an ungraded answer */
+        });
+      pending.current.push(p);
+
+      if (res.followup?.asked && res.followup.question) {
+        setPhase("followup");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } else {
+        await advance();
+      }
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Grading failed");
+      setErr(e instanceof Error ? e.message : "Could not save that answer");
     } finally {
       setSubmitting(false);
     }
   }
 
   async function submitFollowUp(answer: VoiceAnswerHandle) {
-    if (!graded) return;
+    if (!lastAttemptId) return;
     setSubmitting(true);
     try {
       await apiFetch("/api/interview/attempt", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ attemptId: graded.attemptId, transcript: answer.transcript }),
+        body: JSON.stringify({ attemptId: lastAttemptId, transcript: answer.transcript }),
       });
     } catch {
       /* the follow-up is colour on the attempt, not the grade — don't block */
     } finally {
       setSubmitting(false);
-      setPhase("reviewing");
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      await advance();
     }
   }
 
-  async function next() {
+  /** Move to the next question, or close the session out. */
+  async function advance() {
     if (!questions) return;
     if (idx + 1 < questions.length) {
       const ni = idx + 1;
       setIdx(ni);
-      setGraded(null);
+      setFollowup(null);
+      setLastAttemptId(null);
       setPhase("answering");
       persist(questions, ni, scores);
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
+
     setPhase("finishing");
+    // Grades are still in flight; wait for them here rather than between
+    // questions, which is where the waiting actually hurt.
+    await Promise.allSettled(pending.current);
     try {
-      const res = await apiFetch<{ overall: SessionOverall | null }>("/api/interview/session", {
+      const res = await apiFetch<{
+        overall: SessionOverall | null;
+        perQuestion?: PerQuestion[];
+        ungraded?: number;
+      }>("/api/interview/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "finish", sessionId: id }),
       });
       setOverall(res.overall);
+      setPerQuestion(res.perQuestion ?? []);
+      setScores((res.perQuestion ?? []).map((q) => q.score));
+      if (res.ungraded) setErr(`${res.ungraded} answer(s) couldn't be graded and are excluded from the average.`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not build the debrief");
     } finally {
@@ -246,6 +288,62 @@ export function InterviewView({
               </div>
             </div>
 
+            {perQuestion.length > 0 && (
+              <div className="stack">
+                <div className="section-head">
+                  <h2>Question by question</h2>
+                  <span className="sub">Graded while you kept going</span>
+                </div>
+                {perQuestion.map((q, i) => (
+                  <details className="card qreview" key={q.id}>
+                    <summary>
+                      <span className={`scorepill ${scoreClass(q.score)}`}>{q.score}</span>
+                      <span className="qr-prompt">
+                        Q{q.ordinal ?? i + 1}. {q.prompt}
+                      </span>
+                      {q.followupAsked && <span className="chip">probed</span>}
+                    </summary>
+                    <div className="stack" style={{ marginTop: "var(--s3)" }}>
+                      <div className="dimbars">
+                        {rubric.map((d) => (
+                          <div className="dimbar" key={d.key}>
+                            <span className="lbl">{d.label}</span>
+                            <span className="track">
+                              <span className="fill" style={{ width: `${q.breakdown[d.key] ?? 0}%` }} />
+                            </span>
+                            <span className="val">{q.breakdown[d.key] ?? "—"}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {q.feedback?.dimension_notes &&
+                        rubric.map((d) =>
+                          q.feedback?.dimension_notes?.[d.key] ? (
+                            <p key={d.key} style={{ margin: 0, fontSize: "var(--t-base)" }}>
+                              <strong>{d.label}:</strong>{" "}
+                              <span style={{ color: "var(--ink-2)" }}>{q.feedback.dimension_notes[d.key]}</span>
+                            </p>
+                          ) : null
+                        )}
+                      {q.feedback?.add?.length ? (
+                        <div className="callout" style={{ borderLeft: "3px solid var(--accent)" }}>
+                          <h4>What would have raised it</h4>
+                          <ul className="fb-list">
+                            {q.feedback.add.map((t, j) => <li key={j}>{t}</li>)}
+                          </ul>
+                        </div>
+                      ) : null}
+                      {flaggable && (
+                        <div className="row">
+                          <div className="spacer" />
+                          <FlagControl questionId={q.questionId} label="Flag for study" />
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            )}
+
             <div className="row no-print">
               <button className="primary" onClick={() => router.push(`/${section}`)}>
                 Run another
@@ -276,10 +374,17 @@ export function InterviewView({
               Question {idx + 1} of {total}
             </span>
             <span className="chip">{categoryLabel}</span>
-            {scores.length > 0 && (
+            {/* Scores arrive at the debrief now, so show grading progress
+                instead of a running average that would always read zero. */}
+            {idx > 0 && (
               <span className="chip">
-                running avg{" "}
-                <span className="mono">{Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)}</span>
+                {gradedCount < idx ? (
+                  <>
+                    <span className="spin" /> grading {gradedCount}/{idx}
+                  </>
+                ) : (
+                  <>{gradedCount} graded in the background</>
+                )}
               </span>
             )}
           </div>
@@ -303,14 +408,12 @@ export function InterviewView({
         </>
       )}
 
-      {phase === "followup" && graded?.followup?.question && (
+      {phase === "followup" && followup?.question && (
         <>
           <div className="card interview-q followup">
             <div className="eyebrow">Follow-up</div>
-            <h1 className="qhead">{graded.followup.question}</h1>
-            <p className="sub" style={{ marginTop: "0.5rem" }}>
-              Asked because: {graded.followup.reason}
-            </p>
+            <h1 className="qhead">{followup.question}</h1>
+            <p className="sub" style={{ marginTop: "0.5rem" }}>Asked because: {followup.reason}</p>
           </div>
           <div className="card">
             <VoiceAnswer
@@ -320,48 +423,16 @@ export function InterviewView({
               compact
             />
           </div>
-          <button className="ghost" onClick={() => setPhase("reviewing")}>
-            Skip the follow-up
-          </button>
-        </>
-      )}
-
-      {phase === "reviewing" && graded && (
-        <>
-          <div className="card interview-q">
-            <div className="eyebrow">You answered</div>
-            <h2 className="qhead">{current?.prompt}</h2>
-          </div>
-          <AnswerGrade
-            score={graded.score}
-            breakdown={graded.breakdown}
-            dimensionNotes={graded.dimensionNotes}
-            feedback={graded.feedback}
-            metrics={graded.metrics}
-            rubric={rubric}
-          />
-          {!graded.followup?.asked && graded.followup?.reason && (
-            <p className="sub">No follow-up: {graded.followup.reason}</p>
-          )}
-          {flaggable && current && (
-            <div className="card row wrap">
-              <div>
-                <strong style={{ fontSize: "var(--t-base)" }}>Didn&apos;t land?</strong>
-                <p className="sub" style={{ margin: "0.15rem 0 0" }}>
-                  Flag it now and review it in study mode after the interview.
-                </p>
-              </div>
-              <div className="spacer" />
-              <FlagControl questionId={current.id} />
-            </div>
-          )}
-          <div className="row no-print">
-            <button className="primary" onClick={next}>
-              {idx + 1 < total ? "Next question →" : "Finish and debrief"}
+          <div className="row">
+            {flaggable && current && <FlagControl questionId={current.id} label="Flag this question" />}
+            <div className="spacer" />
+            <button className="ghost" onClick={advance} disabled={submitting}>
+              Skip the follow-up
             </button>
           </div>
         </>
       )}
+
     </div>
   );
 }

@@ -125,6 +125,9 @@ export interface AnswerFeedback {
   cut: string[];
   add: string[];
   rewrites: { before: string; after: string }[];
+  /** Carried inside the feedback JSONB so the debrief can show per-dimension
+   *  notes without adding a column. */
+  dimension_notes?: Record<string, string>;
 }
 
 export interface SpeechMetrics {

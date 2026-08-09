@@ -13,6 +13,7 @@ export default function TechnicalPage() {
       interviewBlurb="Questions drawn at random and asked one at a time. Follow-ups come only when an answer leaves a real gap."
       seedable
       studyHref="/technical/study"
+      flashcardsHref="/technical/flashcards"
     />
   );
 }

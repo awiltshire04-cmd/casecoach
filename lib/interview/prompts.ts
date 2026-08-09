@@ -83,6 +83,7 @@ Return JSON exactly:
 export function buildFollowUpMessages(args: {
   question: Question;
   transcript: string;
+  /** Empty when the decision runs before grading (deferred interview mode). */
   breakdown: Record<string, number>;
 }) {
   const system = [
@@ -92,6 +93,7 @@ export function buildFollowUpMessages(args: {
     "Return ONLY valid minified JSON, no prose, no markdown fences.",
   ].join(" ");
 
+  const hasScores = Object.keys(args.breakdown ?? {}).length > 0;
   const user = `QUESTION ASKED:
 ${args.question.prompt}
 
@@ -99,9 +101,7 @@ CANDIDATE'S ANSWER:
 """
 ${args.transcript}
 """
-
-DIMENSION SCORES JUST AWARDED: ${JSON.stringify(args.breakdown)}
-
+${hasScores ? `\nDIMENSION SCORES JUST AWARDED: ${JSON.stringify(args.breakdown)}\n` : ""}
 A follow-up IS warranted when:
 - The answer stayed generic where the question demanded specifics (no company, no numbers, no personal role).
 - It asserted something central without support ("we improved margins", "it's a great business") and the support is the whole point.

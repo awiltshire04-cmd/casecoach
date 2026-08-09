@@ -17,6 +17,10 @@ interface Body {
   ordinal?: number | null;
   /** When set, the interviewer may probe. Standalone practice never follows up. */
   allowFollowUp?: boolean;
+  /** Interview mode: save the answer and decide the follow-up now (fast), and
+   *  leave the full grade to POST /api/interview/grade so the candidate isn't
+   *  watching a spinner between questions. */
+  defer?: boolean;
 }
 
 export async function POST(req: Request) {
@@ -43,6 +47,47 @@ export async function POST(req: Request) {
     const inputMode = body.inputMode ?? "voice";
     const metrics = speechMetrics(transcript, body.durationSec ?? 0);
     const rubric = rubricFor(question.section); // technical weights correctness over narrative
+
+    // ---- deferred path: store the answer, decide the probe, return fast ----
+    if (body.defer) {
+      const { data: row, error: insErr } = await supa
+        .from("question_attempts")
+        .insert({
+          question_id: question.id,
+          session_id: body.sessionId ?? null,
+          ordinal: body.ordinal ?? null,
+          transcript,
+          input_mode: inputMode,
+          duration_sec: metrics.durationSec,
+          word_count: metrics.wordCount,
+          metrics,
+        })
+        .select("id")
+        .single();
+      if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
+
+      let followup: { asked: boolean; reason: string; question: string | null } = {
+        asked: false, reason: "", question: null,
+      };
+      if (body.allowFollowUp) {
+        try {
+          const fu = buildFollowUpMessages({ question, transcript, breakdown: {} });
+          const decision = await jsonCall<{ needed: boolean; reason: string; question: string | null }>({
+            model: MODELS.grade, system: fu.system, user: fu.user, maxTokens: 700,
+          });
+          followup = {
+            asked: Boolean(decision.needed && decision.question),
+            reason: decision.reason ?? "",
+            question: decision.needed ? decision.question : null,
+          };
+        } catch {
+          /* a failed probe shouldn't block the interview */
+        }
+        await supa.from("question_attempts").update({ followup }).eq("id", row.id);
+      }
+
+      return NextResponse.json({ attemptId: row.id, deferred: true, followup });
+    }
 
     const msgs = buildAnswerGradingMessages({
       question,

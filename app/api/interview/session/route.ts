@@ -75,16 +75,20 @@ export async function POST(req: Request) {
 
       const { data: attempts, error } = await supa
         .from("question_attempts")
-        .select("score, breakdown, transcript, ordinal, questions(prompt)")
+        .select("id, question_id, score, breakdown, feedback, transcript, ordinal, followup, questions(prompt, category)")
         .eq("session_id", body.sessionId)
         .order("ordinal", { ascending: true });
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
       type Row = {
-        score: number | null; breakdown: Record<string, number> | null;
-        transcript: string; questions: { prompt: string } | null;
+        id: string; question_id: string; score: number | null; breakdown: Record<string, number> | null;
+        feedback: Record<string, unknown> | null; transcript: string; ordinal: number | null;
+        followup: { asked?: boolean; question?: string | null } | null;
+        questions: { prompt: string; category: string } | null;
       };
-      const rows = ((attempts ?? []) as unknown as Row[]).filter((r) => typeof r.score === "number");
+      const all = (attempts ?? []) as unknown as Row[];
+      const rows = all.filter((r) => typeof r.score === "number");
+      const ungraded = all.length - rows.length;
       if (rows.length === 0) {
         await supa
           .from("interview_sessions")
@@ -122,7 +126,22 @@ export async function POST(req: Request) {
         .update({ status: "complete", completed_at: new Date().toISOString(), overall })
         .eq("id", body.sessionId);
 
-      return NextResponse.json({ overall });
+      // Per-question detail travels with the debrief now that it isn't shown
+      // inline after each answer.
+      const perQuestion = rows.map((r) => ({
+        id: r.id,
+        questionId: r.question_id,
+        ordinal: r.ordinal,
+        prompt: r.questions?.prompt ?? "(question)",
+        category: r.questions?.category ?? "",
+        score: r.score ?? 0,
+        breakdown: r.breakdown ?? {},
+        feedback: r.feedback ?? null,
+        followupAsked: Boolean(r.followup?.asked),
+        followupQuestion: r.followup?.question ?? null,
+      }));
+
+      return NextResponse.json({ overall, perQuestion, ungraded });
     }
 
     return NextResponse.json({ error: "Unknown action." }, { status: 400 });
