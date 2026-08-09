@@ -11,6 +11,8 @@ import { TECHNICAL_CATEGORIES, type Question } from "@/lib/interview/types";
 
 type SourceFilter = "all" | "book" | "generated";
 
+const PROGRESS_KEY = "casecoach:flashcards:technical";
+
 export default function FlashcardsPage() {
   const [deck, setDeck] = useState<Question[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -25,7 +27,35 @@ export default function FlashcardsPage() {
   const [loadingAnswer, setLoadingAnswer] = useState(false);
   const [seen, setSeen] = useState<Set<string>>(new Set());
   const [missed, setMissed] = useState<Set<string>>(new Set());
+  const [flaggedIds, setFlaggedIds] = useState<Set<string>>(new Set());
+  const [hideSeen, setHideSeen] = useState(false);
+  const [restored, setRestored] = useState(false);
   const prefetched = useRef<Set<string>>(new Set());
+
+  // Review progress is per-device study state, not shared data, so it lives in
+  // localStorage — no migration, and it survives a reload, which is the point.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(PROGRESS_KEY);
+      if (raw) {
+        const p = JSON.parse(raw) as { seen?: string[]; missed?: string[] };
+        setSeen(new Set(p.seen ?? []));
+        setMissed(new Set(p.missed ?? []));
+      }
+    } catch {
+      /* corrupt or unavailable storage just means starting fresh */
+    }
+    setRestored(true);
+  }, []);
+
+  useEffect(() => {
+    if (!restored) return; // don't clobber saved progress with the empty initial state
+    try {
+      localStorage.setItem(PROGRESS_KEY, JSON.stringify({ seen: [...seen], missed: [...missed] }));
+    } catch {
+      /* quota or private mode — progress just won't persist */
+    }
+  }, [seen, missed, restored]);
 
   useEffect(() => {
     (async () => {
@@ -36,6 +66,16 @@ export default function FlashcardsPage() {
         setErr(e instanceof Error ? e.message : "Could not load the deck");
         setDeck([]);
       }
+      // Which cards are already flagged, so the control reflects the database
+      // rather than whatever the previous card left behind.
+      try {
+        const f = await apiFetch<{ items: { question: { id: string } }[] }>(
+          "/api/interview/flag?section=technical"
+        );
+        setFlaggedIds(new Set((f.items ?? []).map((i) => i.question.id)));
+      } catch {
+        /* non-fatal: flagging still works, the chip just won't pre-fill */
+      }
     })();
   }, []);
 
@@ -45,9 +85,13 @@ export default function FlashcardsPage() {
         (q) =>
           (!category || q.category === category) &&
           (source === "all" || q.source === source) &&
-          (!stretchOnly || q.difficulty === "stretch")
+          (!stretchOnly || q.difficulty === "stretch") &&
+          (!hideSeen || !seen.has(q.id))
       ),
-    [deck, category, source, stretchOnly]
+    // `seen` deliberately excluded: re-filtering mid-card would yank the deck
+    // out from under you the moment a card is marked seen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [deck, category, source, stretchOnly, hideSeen]
   );
 
   // Reshuffle whenever the filters change the deck.
@@ -60,7 +104,7 @@ export default function FlashcardsPage() {
     setOrder(idxs);
     setPos(0);
     setRevealed(false);
-  }, [filtered.length, category, source, stretchOnly]);
+  }, [filtered.length, category, source, stretchOnly, hideSeen]);
 
   const card = filtered[order[pos]] ?? null;
 
@@ -161,8 +205,21 @@ export default function FlashcardsPage() {
             {s === "all" ? "All" : s === "book" ? "Handbook" : "Extensions"}
           </button>
         ))}
-        <button className={`chip${stretchOnly ? " blue" : ""}`} style={{ cursor: "pointer" }} onClick={() => setStretchOnly((v) => !v)}>
+        <button
+          className={`chip${stretchOnly ? " blue" : ""}`}
+          style={{ cursor: "pointer" }}
+          onClick={() => setStretchOnly((v) => !v)}
+          title="Stretch = multi-step reasoning, a curveball, or something most candidates fumble. Core = the definitional and single-step questions."
+        >
           Stretch only
+        </button>
+        <button
+          className={`chip${hideSeen ? " blue" : ""}`}
+          style={{ cursor: "pointer" }}
+          onClick={() => setHideSeen((v) => !v)}
+          title="Hide cards you've already revealed in a previous session"
+        >
+          Hide seen
         </button>
       </div>
 
@@ -177,10 +234,20 @@ export default function FlashcardsPage() {
         <>
           <div className="row wrap" style={{ marginBottom: "var(--s3)" }}>
             <span className="chip">{pos + 1} of {filtered.length}</span>
-            <span className="chip">{seen.size} seen</span>
+            <span className="chip" title="Cards you've revealed, saved on this device">
+              {seen.size} seen
+            </span>
             {missed.size > 0 && <span className="chip bad">{missed.size} to revisit</span>}
-            {card?.difficulty === "stretch" && <span className="chip warn">Stretch</span>}
+            {card?.difficulty === "stretch" && (
+              <span
+                className="chip warn"
+                title="Multi-step reasoning, a curveball, or something most candidates fumble"
+              >
+                Stretch
+              </span>
+            )}
             {card?.source === "generated" && <span className="chip accent">Extension</span>}
+            {card && flaggedIds.has(card.id) && <span className="chip warn">Flagged</span>}
             {card && <span className="chip">{catLabel(card.category)}</span>}
             <div className="spacer" />
             <span className="sub">space = flip · ← → = move</span>
@@ -222,13 +289,42 @@ export default function FlashcardsPage() {
                 >
                   Didn&apos;t get it →
                 </button>
-                <FlagControl questionId={card.id} label="Flag for study mode" />
+                {/* keyed so the control remounts per card and can never carry
+                    the previous card's flag state forward */}
+                <FlagControl
+                  key={card.id}
+                  questionId={card.id}
+                  initiallyFlagged={flaggedIds.has(card.id)}
+                  label="Flag for study mode"
+                  onChange={(f) =>
+                    setFlaggedIds((s) => {
+                      const n = new Set(s);
+                      if (f) n.add(card.id);
+                      else n.delete(card.id);
+                      return n;
+                    })
+                  }
+                />
               </>
             )}
             {!revealed && <button onClick={() => step(1)}>Skip →</button>}
             <div className="spacer" />
             {pos === filtered.length - 1 && revealed && (
               <span className="sub">End of deck — change a filter to reshuffle.</span>
+            )}
+            {seen.size > 0 && (
+              <button
+                className="ghost sm"
+                onClick={() => {
+                  if (confirm(`Clear your progress on ${seen.size} seen card(s)? Flags are kept.`)) {
+                    setSeen(new Set());
+                    setMissed(new Set());
+                    setHideSeen(false);
+                  }
+                }}
+              >
+                Reset progress
+              </button>
             )}
           </div>
         </>

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/http";
 
 // Flagging is two different admissions — "I got it wrong" and "I don't follow
@@ -19,6 +19,16 @@ export function FlagControl({
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // Re-point at a different question — as the flashcard deck does on every
+  // card — and the state must follow. `useState(initiallyFlagged)` only seeds
+  // the first render, so without this the control stayed "flagged" from the
+  // previous card and silently swallowed every subsequent flag.
+  useEffect(() => {
+    setFlagged(initiallyFlagged);
+    setOpen(false);
+    setErr(null);
+  }, [questionId, initiallyFlagged]);
 
   async function set(next: boolean, reason?: "wrong" | "unclear") {
     setBusy(true);
