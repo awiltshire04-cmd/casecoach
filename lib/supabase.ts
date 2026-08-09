@@ -15,11 +15,24 @@ export function browserClient() {
 }
 
 // Server-side (service role) — used inside API routes.
+//
+// Next patches global fetch and caches GET requests made inside route handlers.
+// supabase-js uses fetch, so query results were being served from the data
+// cache: the dashboard returned a months-old snapshot (4 activity events when
+// the database held 37) and no amount of reloading refreshed it. Every read
+// here is live user data, so opt out explicitly rather than relying on route
+// segment config to cover it.
 export function serviceClient() {
   if (!url || !serviceKey) {
     throw new Error("Supabase env vars missing: NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY");
   }
-  return createClient(url, serviceKey, { auth: { persistSession: false } });
+  return createClient(url, serviceKey, {
+    auth: { persistSession: false },
+    global: {
+      fetch: (input: RequestInfo | URL, init?: RequestInit) =>
+        fetch(input, { ...init, cache: "no-store" }),
+    },
+  });
 }
 
 // Render exhibits as compact text so the grader (and exemplar) can read them.

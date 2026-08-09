@@ -347,8 +347,21 @@ label.field span { font-weight: 600; }
 }
 .feed-item:last-child { border-bottom: none; }
 .feed-item .who { min-width: 0; flex: 1; }
-.feed-item .t { font-size: var(--t-base); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* These must be block-level: text-overflow only applies to block containers,
+   so as inline spans they ignored the ellipsis and a long technical question
+   ran past the card and put the whole page into horizontal scroll. */
+.feed-item .t,
+.feed-item .m {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.feed-item .t { font-size: var(--t-base); font-weight: 600; }
 .feed-item .m { font-size: var(--t-xs); color: var(--muted); margin-top: 1px; }
+/* The chip and score frame the row; only the title should absorb the squeeze. */
+.feed-item > .chip, .feed-item > .scorepill, .feed-item > .sub { flex: none; }
 .feed-item.clickable { cursor: pointer; }
 .feed-item.clickable:hover .t { color: var(--accent); }
 
@@ -618,7 +631,9 @@ table.data tr.clickable { cursor: pointer; }
 .qreview > summary::-webkit-details-marker { display: none; }
 .qreview > summary::after { content: "▾"; margin-left: auto; color: var(--faint); font-size: 0.7rem; }
 .qreview[open] > summary::after { content: "▴"; }
-.qreview .qr-prompt { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* min-width:0 lets the flex item actually shrink so the ellipsis can engage. */
+.qreview .qr-prompt { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qreview > summary > .scorepill, .qreview > summary > .chip { flex: none; }
 
 /* ---- model audit: cell citations ---- */
 .cellrefs { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.4rem; }
