@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { jsonCall, MODELS } from "@/lib/anthropic";
 import { serviceClient } from "@/lib/supabase";
 import { buildGenerationMessages } from "@/lib/prompts";
-import { ARCHETYPES, VERDICT_SHAPES, type GenerateParams, type GeneratedCase, type VerdictShape } from "@/lib/types";
+import {
+  ARCHETYPES, VERDICT_SHAPES, pickVerdictShape,
+  type GenerateParams, type GeneratedCase, type VerdictShape,
+} from "@/lib/types";
 
 export const runtime = "nodejs";
 // A single generation call measures 55-75s, and jsonCall retries once on
@@ -50,11 +53,9 @@ export async function POST(req: Request) {
       Math.floor(Math.random() * (pool.length ? pool.length : ARCHETYPES.length))
     ];
 
-    // Deliberately not uniform: a real pipeline has more passes than clean
-    // buys, but nowhere near enough to make "no" a free guess.
-    const roll = Math.random();
-    const verdict: VerdictShape =
-      roll < 0.3 ? "invest" : roll < 0.62 ? "pass" : roll < 0.85 ? "conditional" : "ambiguous";
+    // Weighted toward conditional and ambiguous: most real investment
+    // decisions are a priced or contingent opinion, not a binary yes/no.
+    const verdict: VerdictShape = pickVerdictShape();
     const verdictBrief = VERDICT_SHAPES.find((v) => v.key === verdict)!.brief;
 
     const { system, user } = buildGenerationMessages(params, weakTraps, {
@@ -63,7 +64,13 @@ export async function POST(req: Request) {
       verdictBrief,
     });
 
-    const gen = await jsonCall<GeneratedCase>({
+    // A case with no key insights and no defensible positions cannot be graded
+    // — there's nothing to score against and nothing for the review to cite.
+    // The model occasionally drops these trailing fields, so verify and retry.
+    const insightsOf = (g: GeneratedCase) =>
+      ((g as unknown as { key_insights?: unknown[] }).key_insights ?? g.hidden_traps ?? []).length;
+
+    let gen = await jsonCall<GeneratedCase>({
       model: MODELS.generate,
       system,
       user,
@@ -73,10 +80,25 @@ export async function POST(req: Request) {
       maxTokens: 12000,
     });
 
+    if (insightsOf(gen) === 0) {
+      gen = await jsonCall<GeneratedCase>({
+        model: MODELS.generate,
+        system,
+        user:
+          user +
+          "\n\nYOUR PREVIOUS ATTEMPT OMITTED key_insights AND defensible_positions. Both are mandatory and non-empty. Emit them FIRST, before title and exhibits.",
+        maxTokens: 12000,
+      });
+    }
+
     // The schema says hidden_traps is a list of strings, but the model
     // occasionally returns objects. Left alone these render as "[object Object]"
     // in the grader prompt and the archive's trap tracker.
-    const traps = (gen.hidden_traps ?? []).map((t: unknown) =>
+    // The model now emits `key_insights` (the old "traps" framing biased every
+    // case toward objections); it still lands in the hidden_traps column.
+    const rawInsights =
+      (gen as unknown as { key_insights?: unknown[] }).key_insights ?? gen.hidden_traps ?? [];
+    const traps = rawInsights.map((t: unknown) =>
       typeof t === "string"
         ? t
         : ((t as { trap?: string; text?: string; insight?: string })?.trap ??

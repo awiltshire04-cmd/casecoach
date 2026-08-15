@@ -98,34 +98,84 @@ Required instead — present the same facts neutrally and let them speak:
 
 Attribute claims rather than asserting them. "Management projects 12% organic growth" and "the CIM states the contract renews automatically" are facts about what was said — those are fine and realistic. Your own verdict on whether the claim holds is not.
 
-Put the decisive evidence somewhere it must be worked for: split across two exhibits, buried in a footnote alongside unremarkable detail, or present only as an inconsistency between what management says and what a table shows. Include some genuinely unremarkable detail so not every number is load-bearing.
+CRITICAL — DO NOT NAME THE ANALYSIS. Banning evaluative words is not enough; a case gives itself away through structure:
+
+1. EXHIBIT TITLES must read like a data room index — what the exhibit CONTAINS, never the analytical move it invites.
+   - BAD: "Cohort Unit Economics by Acquisition Year" (tells them to disaggregate cohorts)
+   - BAD: "Revenue, Volume and Pricing Bridge" (tells them to split price from volume)
+   - BAD: "Customer Concentration Detail" (names the risk)
+   - GOOD: "Exhibit 3 — Customer Accounts, FY2021-FY2023", "Schedule 2 — Quarterly Bookings", "Appendix B — Top Accounts by Billings"
+   Give the raw material and let them decide what cut to take.
+
+2. DO NOT SUPPLY A RETURNS SKETCH. No "Returns Sketch", no "Illustrative Returns", no scenario table with IRRs. Sketching the return is the candidate's work; handing over the inputs pre-chewed removes the exercise. Give the raw inputs (price, debt terms, EBITDA, growth) in the prompt or an ordinary schedule and stop there.
+
+3. SEPARATE THE FACTS THAT COMBINE. The insight is the connection between two facts, so those two facts must NOT sit in the same sentence, paragraph or exhibit. Put one in the narrative and the other three exhibits later, or in a footnote, or in call notes. If a reader can get the point from one paragraph, you have written the answer down.
+   - BAD: "The top five accounts are 44% of revenue and are managed exclusively by the founder, who is leaving. The new VP has no relationships with them."
+   - GOOD: the customer list shows five accounts and their share; a separate management bio notes the VP started six months ago; the transaction terms mention the founder's 24-month intention. Three places, one inference.
+
+4. INCLUDE REAL NOISE. At least a third of the rows, line items and details must be genuinely unremarkable — accurate, plausible, and not load-bearing. If every number matters, noticing is trivial.
+
+VARY THE EXHIBIT FORMS. Do not produce four financial tables. Choose 3-5 exhibits from these kinds, and use at least two DIFFERENT kinds:
+- "table": columns/rows. Financial schedules, operating stats, customer billings.
+- "note": call notes, an internal diligence memo, an email thread — prose with the hedging and digression real notes contain.
+- "quote": something a named person actually said, verbatim and unedited.
+- "list": customers, contracts, covenants, facilities, key terms — itemised.
+- "chart": a series the candidate reads as a shape (e.g. quarterly bookings, headcount, pricing).
+- "timeline": dated events, where the sequence carries the meaning.
+A management call note or a contract list is often a far better hiding place for the decisive fact than another table.
 
 ${p.has_financials
-      ? "Include 1-3 exhibits as data tables (revenue/EBITDA trajectory, segment mix, unit economics, or comps). Make at least one exhibit necessary to answer well. If the difficulty is hard, embed a quantitative trap in the exhibits (e.g. earnings sitting at a cyclical or stimulus-driven peak)."
-      : "Do NOT include financial exhibits; keep it qualitative."}
+      ? "Include 3-5 exhibits. At least one must be necessary to answer well, and at least one must be a non-table kind (see the exhibit-form rules below)."
+      : "Keep it qualitative — no financial schedules. You may still include note, quote, list or timeline exhibits."}
 
 Build a rubric with these dimensions and weights: ${dims}.
 For EACH dimension provide score anchors describing what a 90, a 70, and a 50 look like FOR THIS SPECIFIC CASE (concrete, referencing this case's actual content — not generic).
 
-Also list hidden_traps: the 3-6 specific insights a top candidate must surface, phrased as short imperatives. These are stored for GRADING ONLY and are never shown to the candidate before they answer — so state them plainly here. They must follow from this case's archetype rather than defaulting to earnings normalisation. Where genuinely relevant, these universal principles apply: ${UNIVERSAL_TRAPS.join(" ")}
-${weakTraps.length ? `\nSPACED REPETITION: this candidate has recently missed the following in ${p.type} cases — design the case so at least one of these is live again: ${weakTraps.join("; ")}` : ""}
+Also list key_insights: the 3-6 things a top candidate must surface. Stored for GRADING ONLY and never shown before answering, so state them plainly. They must follow from this case's archetype rather than defaulting to earnings normalisation.
+
+CRITICAL — key_insights are NOT a list of objections. They are what a sharp reviewer notices, and on a good business most of what they notice is why it works. Match them to how the case resolves:
 ${
-  shape?.verdict === "ambiguous"
-    ? `\nThis case is deliberately balanced. Also return defensible_positions: the two (or more) verdicts a strong candidate could defend and the grounds for each. The rubric must reward reasoning quality, not the label chosen.`
-    : ""
+  shape?.verdict === "invest" || shape?.verdict === "conditional"
+    ? `- This case does NOT resolve as a flat "no". At least HALF of key_insights must be supporting: the evidence that makes the thesis work, and specifically why the obvious objection does NOT hold here. A candidate who lists concerns without weighing them has not done the work.
+- Include at least one insight of the form "the obvious worry is X, but the evidence shows Y" — the reasoning that defeats the reflexive pass.`
+    : shape?.verdict === "ambiguous"
+      ? `- This case is genuinely balanced. key_insights must include the strongest points on BOTH sides. A candidate is graded on weighing them, never on which side they land.`
+      : `- Even though this resolves as a pass, include at least one insight about a genuine strength, so passing requires judgment rather than pattern-matching.`
 }
+
+Also return defensible_positions — ALWAYS, for every case, not just balanced ones. Real investment decisions are rarely a binary yes or no, and the candidate is being trained to form a priced, conditional opinion. Give 1-3 positions a strong candidate could defend, each with its grounds. One position means the case has a clear answer; two or more means it is genuinely open. For a conditional case, at least one position must name a price or a condition.
+
+Where genuinely relevant, these universal principles apply: ${UNIVERSAL_TRAPS.join(" ")}
+${weakTraps.length ? `\nSPACED REPETITION: this candidate has recently missed the following in ${p.type} cases — design the case so at least one of these is live again: ${weakTraps.join("; ")}` : ""}
 Rubric anchors must describe reasoning about THIS business — what a 90 notices that a 70 misses — without restating the answer as a slogan.
 
 LENGTH DISCIPLINE (the response is truncated if it runs long, which wastes the whole generation):
-- 2-4 exhibits, at most 8 rows each.
-- hidden_traps: 3-6 entries, each ONE sentence of at most 35 words, and each a plain STRING — never an object.
+- 3-5 exhibits, at most 8 rows / items / events each; note and quote bodies at most 160 words.
+- key_insights: 3-6 entries, each ONE sentence of at most 35 words, and each a plain STRING — never an object.
+- anchor_figures: 4-8 entries, derivation at most 20 words.
 - defensible_positions: at most 2 entries, each with grounds of at most 60 words.
 - Rubric anchors: at most 25 words each.
 - The case prompt itself: at most 450 words.
 
-Return JSON exactly:
-{"title":string,"prompt":string,"exhibits":[{"kind":"table","title":string,"columns":[string],"rows":[[string|number]],"footnote":string?}],"rubric":{"dimensions":[{"key":string,"label":string,"weight":number,"anchors":{"90":string,"70":string,"50":string}}]},"hidden_traps":[string],"defensible_positions":[{"verdict":string,"grounds":string}],"suggested_time_sec":${suggested}}
-Return defensible_positions as an empty array unless the case is deliberately balanced.`;
+NUMERIC CONSISTENCY — the grading key is used to mark the candidate, so a figure in it that contradicts the exhibits penalises correct work. This is a hard requirement:
+- Fix the load-bearing numbers FIRST, in anchor_figures, before writing anything else. Everything downstream must then use exactly those numbers.
+- Every figure you cite in key_insights, defensible_positions or the prompt must appear in an exhibit or be exactly computable from one.
+- If you state a share ("the top three clients are X% of revenue"), the components AND the denominator must both be in an exhibit, and X must be what they actually produce. Compute it; do not estimate.
+- If you state a multiple, the price and the earnings figure must both be present and must actually divide to it.
+- Before returning, re-read every number in key_insights and defensible_positions and confirm it reconciles to the exhibits. Correct the exhibit or the claim so they agree — never ship both.
+
+Return JSON exactly, WITH THE KEYS IN THIS ORDER. anchor_figures, key_insights and defensible_positions come first and are MANDATORY and non-empty — a case without them cannot be graded and is worthless. Write them before the exhibits so they are never dropped and so the exhibits are built to match them:
+{"anchor_figures":[{"label":string,"value":string,"derivation":string}],"key_insights":[string],"defensible_positions":[{"verdict":string,"grounds":string}],"title":string,"prompt":string,"exhibits":[ExhibitObject],"rubric":{"dimensions":[{"key":string,"label":string,"weight":number,"anchors":{"90":string,"70":string,"50":string}}]},"suggested_time_sec":${suggested}}
+
+anchor_figures: 4-8 load-bearing numbers — entry price, the earnings figure the multiple is struck on, the entry multiple, leverage, any concentration share, the returns outcome. "derivation" states where it comes from and, for anything computed, the arithmetic (e.g. "14.5 of 55.9 revenue = 25.9%"). These are working notes, never shown to the candidate.
+
+Each ExhibitObject is ONE of:
+{"kind":"table","title":string,"columns":[string],"rows":[[string|number]],"footnote":string?}
+{"kind":"note","title":string,"source":string?,"body":string,"footnote":string?}
+{"kind":"quote","title":string,"speaker":string?,"body":string,"footnote":string?}
+{"kind":"list","title":string,"items":[{"label":string,"value":(string|number)?,"note":string?}],"footnote":string?}
+{"kind":"chart","title":string,"unit":string?,"series":[{"label":string,"points":[{"x":string|number,"y":number}]}],"footnote":string?}
+{"kind":"timeline","title":string,"events":[{"when":string,"what":string}],"footnote":string?}`;
 
   return { system, user };
 }
@@ -151,8 +201,10 @@ export function buildGradingMessages(args: {
     "You are a demanding but fair PE/consulting interviewer grading a candidate's case response.",
     "Grade each rubric dimension INDEPENDENTLY using its score anchors. Be calibrated: most real answers land 55-80. Reserve 85+ for answers that surface what the case was testing and lead with the central question. Do not inflate.",
     balanced
-      ? "This case is deliberately balanced and has more than one defensible verdict. Grade the QUALITY OF THE REASONING, not which verdict was chosen. A well-argued minority position that engages the strongest counter-evidence beats a poorly-argued consensus one."
+      ? "This case has more than one defensible position. Grade the QUALITY OF THE REASONING, not which one was chosen. A well-argued minority position that engages the strongest counter-evidence beats a poorly-argued consensus one."
       : "Do not reward a verdict that happens to match while the reasoning behind it is absent — and do not penalise a different verdict that is genuinely well supported by the evidence.",
+    "Investment answers are rarely binary. Reward a priced or conditional view — 'yes at this price', 'yes subject to this diligence finding' — over an unqualified yes or no, whenever the evidence supports one.",
+    "CRITICAL: raising a concern is not the same as resolving it. A candidate who lists objections without weighing them has NOT done the work and must not out-score one who identifies the same issues, tests them against the evidence, and concludes. Where the evidence defeats an objection, credit the candidate who says so and penalise the one who treats it as disqualifying.",
     "Return ONLY valid minified JSON, no prose, no markdown fences.",
   ].join(" ");
 
@@ -172,7 +224,7 @@ ${args.exhibitsText ? `EXHIBITS:\n${args.exhibitsText}\n` : ""}
 RUBRIC (grade each dimension against these anchors):
 ${rubricText}
 
-HIDDEN TRAPS the case was really testing (reward hitting these, note the ones missed):
+WHAT THE CASE WAS TESTING — the things a top candidate surfaces. Note that these include SUPPORTING evidence, not only objections; credit the candidate for the supporting ones too, and for correctly dismissing a worry the evidence defeats:
 ${args.hiddenTraps.map((t, i) => `${i + 1}. ${t}`).join("\n")}
 
 CANDIDATE RESPONSE:

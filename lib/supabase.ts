@@ -36,15 +36,37 @@ export function serviceClient() {
 }
 
 // Render exhibits as compact text so the grader (and exemplar) can read them.
+// Handles every exhibit kind; anything stored before `kind` existed is a table.
 export function exhibitsToText(exhibits: Exhibit[]): string {
   if (!exhibits?.length) return "";
   return exhibits
     .map((ex) => {
-      const header = ex.columns.join(" | ");
-      const sep = ex.columns.map(() => "---").join(" | ");
-      const body = ex.rows.map((r) => r.join(" | ")).join("\n");
       const foot = ex.footnote ? `\n(${ex.footnote})` : "";
-      return `${ex.title}\n${header}\n${sep}\n${body}${foot}`;
+      switch (ex.kind) {
+        case "note":
+          return `${ex.title}${ex.source ? ` — ${ex.source}` : ""}\n${ex.body}${foot}`;
+        case "quote":
+          return `${ex.title}\n"${ex.body}"${ex.speaker ? ` — ${ex.speaker}` : ""}${foot}`;
+        case "list":
+          return `${ex.title}\n${ex.items
+            .map((i) => `- ${i.label}${i.value != null ? `: ${i.value}` : ""}${i.note ? ` (${i.note})` : ""}`)
+            .join("\n")}${foot}`;
+        case "chart":
+          return `${ex.title}${ex.unit ? ` (${ex.unit})` : ""}\n${ex.series
+            .map((s) => `${s.label}: ${s.points.map((p) => `${p.x}=${p.y}`).join(", ")}`)
+            .join("\n")}${foot}`;
+        case "timeline":
+          return `${ex.title}\n${ex.events.map((e) => `${e.when}: ${e.what}`).join("\n")}${foot}`;
+        case "table":
+        default: {
+          const t = ex as { columns?: string[]; rows?: (string | number)[][] };
+          const cols = t.columns ?? [];
+          const header = cols.join(" | ");
+          const sep = cols.map(() => "---").join(" | ");
+          const body = (t.rows ?? []).map((r) => r.join(" | ")).join("\n");
+          return `${ex.title}\n${header}\n${sep}\n${body}${foot}`;
+        }
+      }
     })
     .join("\n\n");
 }

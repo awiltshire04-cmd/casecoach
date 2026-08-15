@@ -601,6 +601,39 @@ table.data tr.clickable { cursor: pointer; }
 .studycard { border-left: 3px solid var(--warn); }
 .studycard .qprompt { font-size: var(--t-lg); }
 
+/* ---- non-table exhibits ---- */
+.exhibit-block { border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem 1.15rem; background: var(--card); }
+.exhibit-block.note { background: var(--wash); }
+.exhibit-block.quote { border-left: 3px solid var(--accent); }
+.exhibit-block .ex-head {
+  font-weight: 700; font-size: var(--t-md); margin-bottom: 0.6rem;
+  display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap;
+}
+.exhibit-block .ex-src { font-family: var(--mono); font-size: var(--t-xs); color: var(--muted); font-weight: 500; }
+.exhibit-block .ex-body { margin: 0; font-size: var(--t-base); line-height: 1.7; color: var(--ink-2); white-space: pre-wrap; }
+.exhibit-block .ex-quote { margin: 0; font-size: var(--t-md); line-height: 1.7; color: var(--ink); font-style: italic; }
+.exhibit-block .ex-foot { margin: 0.7rem 0 0; font-size: var(--t-xs); color: var(--faint); }
+
+.ex-list { list-style: none; padding: 0; margin: 0; }
+.ex-list li { display: flex; gap: 0.6rem; align-items: baseline; padding: 0.4rem 0; border-bottom: 1px solid var(--line-2); font-size: var(--t-base); }
+.ex-list li:last-child { border-bottom: none; }
+.ex-list .k { color: var(--ink-2); font-weight: 600; }
+.ex-list .v { margin-left: auto; }
+.ex-list .n { color: var(--faint); font-size: var(--t-xs); flex-basis: 100%; }
+
+.ex-timeline { list-style: none; padding: 0; margin: 0; }
+.ex-timeline li { display: flex; gap: 0.9rem; padding: 0.45rem 0; border-left: 2px solid var(--line); padding-left: 0.9rem; font-size: var(--t-base); }
+.ex-timeline .when { color: var(--muted); font-size: var(--t-xs); min-width: 8ch; }
+.ex-timeline .what { color: var(--ink-2); }
+
+.ex-series { margin-top: 0.8rem; }
+.ex-series-label { font-size: var(--t-xs); color: var(--muted); margin-bottom: 0.35rem; font-weight: 600; }
+.ex-bars { display: flex; align-items: flex-end; gap: 0.5rem; height: 110px; }
+.ex-bar { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; position: relative; }
+.ex-bar-fill { width: 100%; max-width: 46px; background: var(--accent); border-radius: 3px 3px 0 0; opacity: 0.85; }
+.ex-bar-x { font-size: var(--t-xs); color: var(--muted); margin-top: 0.3rem; }
+.ex-bar-y { font-size: var(--t-xs); color: var(--ink-2); order: -1; margin-bottom: 0.2rem; }
+
 /* ---- flashcards ---- */
 .flashcard {
   border: 1px solid var(--line); border-radius: var(--radius); background: var(--card);

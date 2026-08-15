@@ -205,19 +205,108 @@ export const ARCHETYPES: Archetype[] = [
 export type VerdictShape = "invest" | "pass" | "conditional" | "ambiguous";
 
 export const VERDICT_SHAPES: { key: VerdictShape; brief: string }[] = [
-  { key: "invest", brief: "The evidence supports investing. A candidate who reflexively passes is wrong and should lose points for it." },
-  { key: "pass", brief: "The evidence supports passing, on a specific and defensible ground." },
-  { key: "conditional", brief: "The right answer is a priced or conditional yes — invest at a different price, or subject to a named diligence finding." },
-  { key: "ambiguous", brief: "Genuinely balanced. Two well-argued candidates could reach opposite verdicts; the reasoning is what is being graded, not the label." },
+  {
+    key: "invest",
+    brief:
+      "The evidence supports investing at or near the asking price. The obvious objections exist but do NOT hold up under scrutiny, and the case must contain the evidence that defeats them. A candidate who reflexively passes is wrong and should lose points. Your returns sketch must actually clear a PE hurdle (high-teens IRR or better) at the stated price.",
+  },
+  {
+    key: "pass",
+    brief:
+      "The evidence supports passing, on a specific and defensible ground — not a general sense of unease. The returns must genuinely fail at the asking price, and the case should still contain real strengths so passing requires judgment rather than pattern-matching.",
+  },
+  {
+    key: "conditional",
+    brief:
+      "Neither yes nor no on the terms offered. The deal works at a different price, or contingent on a named diligence finding. The candidate's job is to say what they would pay and what would change their mind — the case must contain enough to price it, and the returns must be near the hurdle rather than obviously above or below.",
+  },
+  {
+    key: "ambiguous",
+    brief:
+      "Genuinely balanced. Two strong candidates could reach opposite conclusions and both be defensible. Build real evidence on BOTH sides — the reasoning is what is graded, never the label.",
+  },
 ];
 
-export interface Exhibit {
+/** Real investment decisions are rarely binary, so the two shapes that force a
+ *  formed opinion rather than a yes/no carry the majority of the weight. */
+export const VERDICT_MIX: { key: VerdictShape; weight: number }[] = [
+  { key: "conditional", weight: 32 },
+  { key: "ambiguous", weight: 26 },
+  { key: "pass", weight: 22 },
+  { key: "invest", weight: 20 },
+];
+
+export function pickVerdictShape(rand = Math.random()): VerdictShape {
+  const total = VERDICT_MIX.reduce((a, v) => a + v.weight, 0);
+  let roll = rand * total;
+  for (const v of VERDICT_MIX) {
+    roll -= v.weight;
+    if (roll <= 0) return v.key;
+  }
+  return "conditional";
+}
+
+// A data room isn't 41 variations of one table. These are the artefacts a deal
+// team actually reads: financial schedules, yes, but also call notes, verbatim
+// management claims, contract and customer lists, trend series and event
+// chronologies. Old cases stored plain tables, so `kind` defaults accordingly.
+export interface ExhibitTableData {
   kind: "table";
   title: string;
   columns: string[];
   rows: (string | number)[][];
   footnote?: string;
 }
+/** Diligence call notes, an internal memo, an email thread — prose the team
+ *  would have on file, with all its hedging and irrelevance intact. */
+export interface ExhibitNote {
+  kind: "note";
+  title: string;
+  /** e.g. "Notes — call with VP Sales, 14 Mar" */
+  source?: string;
+  body: string;
+  footnote?: string;
+}
+/** Something a person actually said, on the record, unedited. */
+export interface ExhibitQuote {
+  kind: "quote";
+  title: string;
+  speaker?: string;
+  body: string;
+  footnote?: string;
+}
+/** Customers, contracts, facilities, covenants — itemised, not tabulated. */
+export interface ExhibitList {
+  kind: "list";
+  title: string;
+  items: { label: string; value?: string | number; note?: string }[];
+  footnote?: string;
+}
+/** A trend the candidate must read off a shape rather than a table. */
+export interface ExhibitChart {
+  kind: "chart";
+  title: string;
+  unit?: string;
+  series: { label: string; points: { x: string | number; y: number }[] }[];
+  footnote?: string;
+}
+/** Chronology — when things happened is often the whole insight. */
+export interface ExhibitTimeline {
+  kind: "timeline";
+  title: string;
+  events: { when: string; what: string }[];
+  footnote?: string;
+}
+
+export type Exhibit =
+  | ExhibitTableData
+  | ExhibitNote
+  | ExhibitQuote
+  | ExhibitList
+  | ExhibitChart
+  | ExhibitTimeline;
+
+export const EXHIBIT_KINDS = ["table", "note", "quote", "list", "chart", "timeline"] as const;
 
 export interface RubricDimension {
   key: string;          // structure | quant | judgment | comms | prioritization
@@ -240,7 +329,10 @@ export interface GeneratedCase {
   prompt: string;
   exhibits: Exhibit[];
   rubric: Rubric;
-  hidden_traps: string[];       // the "what this was really testing" material
+  /** What a top candidate must surface — supporting evidence as well as
+   *  objections. Emitted by the model as `key_insights`; stored as
+   *  `hidden_traps` because that is the existing column. */
+  hidden_traps: string[];
   suggested_time_sec: number;
   /** For ambiguous cases: the verdicts a strong candidate could defend, and on
    *  what grounds. Grading uses this so a well-argued minority view isn't marked
